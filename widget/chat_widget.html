@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QueryMind Chat Widget</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+
+  #qm-launcher {
+    position: fixed; bottom: 24px; right: 24px;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #6C47FF; color: #fff; font-size: 24px;
+    border: none; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    z-index: 9998;
+  }
+
+  #qm-panel {
+    position: fixed; bottom: 92px; right: 24px;
+    width: 360px; height: 520px;
+    background: #fff; border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    display: flex; flex-direction: column;
+    z-index: 9999; overflow: hidden;
+    display: none;
+  }
+
+  #qm-header {
+    background: #6C47FF; color: #fff;
+    padding: 14px 16px; font-weight: 600; font-size: 15px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
+  #qm-messages {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  .qm-msg {
+    max-width: 82%; padding: 10px 12px;
+    border-radius: 12px; font-size: 14px; line-height: 1.5;
+  }
+  .qm-msg.user { align-self: flex-end; background: #6C47FF; color: #fff; }
+  .qm-msg.bot  { align-self: flex-start; background: #f1f0fb; color: #111; }
+  .qm-source   { font-size: 11px; color: #888; margin-top: 2px; }
+
+  #qm-input-row {
+    padding: 10px 12px; border-top: 1px solid #eee;
+    display: flex; gap: 8px;
+  }
+  #qm-input {
+    flex: 1; border: 1px solid #ddd; border-radius: 8px;
+    padding: 8px 12px; font-size: 14px; outline: none;
+  }
+  #qm-send {
+    background: #6C47FF; color: #fff; border: none;
+    border-radius: 8px; padding: 8px 14px; cursor: pointer;
+    font-size: 14px;
+  }
+
+  .qm-typing { font-size: 13px; color: #888; padding: 4px 0; }
+</style>
+</head>
+<body>
+
+<button id="qm-launcher" onclick="togglePanel()">💬</button>
+
+<div id="qm-panel">
+  <div id="qm-header">
+    <span>QueryMind Chat</span>
+    <span style="cursor:pointer" onclick="togglePanel()">✕</span>
+  </div>
+  <div id="qm-messages">
+    <div class="qm-msg bot">Hi! Ask me anything about your data.</div>
+  </div>
+  <div id="qm-input-row">
+    <input id="qm-input" type="text" placeholder="Ask a question..."
+           onkeydown="if(event.key==='Enter') sendMessage()"/>
+    <button id="qm-send" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+  const API_URL = "http://localhost:8000";    // Change to your deployed URL
+  const sessionId = Math.random().toString(36).slice(2);
+  let panelOpen = false;
+
+  function togglePanel() {
+    panelOpen = !panelOpen;
+    document.getElementById("qm-panel").style.display = panelOpen ? "flex" : "none";
+  }
+
+  function addMessage(role, text, source) {
+    const box = document.getElementById("qm-messages");
+    const div = document.createElement("div");
+    div.className = `qm-msg ${role}`;
+    div.innerHTML = text.replace(/\n/g, "<br>");
+    if (source) {
+      const cap = document.createElement("div");
+      cap.className = "qm-source";
+      cap.textContent = `via ${source}`;
+      div.appendChild(cap);
+    }
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function addTyping() {
+    const box = document.getElementById("qm-messages");
+    const t = document.createElement("div");
+    t.className = "qm-typing"; t.id = "qm-typing"; t.textContent = "Thinking...";
+    box.appendChild(t);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function removeTyping() {
+    const t = document.getElementById("qm-typing");
+    if (t) t.remove();
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById("qm-input");
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = "";
+    addMessage("user", msg);
+    addTyping();
+
+    try {
+      const r = await fetch(`${API_URL}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg, session_id: sessionId }),
+      });
+      const data = await r.json();
+      removeTyping();
+      addMessage("bot", data.answer || data.detail || "Error", data.source);
+    } catch (e) {
+      removeTyping();
+      addMessage("bot", "Connection error. Is the API running?");
+    }
+  }
+</script>
+</body>
+</html>
