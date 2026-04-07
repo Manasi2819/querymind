@@ -2,7 +2,7 @@
 RAG service — retrieves relevant chunks from ChromaDB and generates an answer.
 """
 
-from langchain.chains import RetrievalQA
+from langchain_classic.chains import RetrievalQA
 from services.embed_service import get_vector_store
 from services.llm_service import get_llm
 

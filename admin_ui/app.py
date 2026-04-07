@@ -104,38 +104,40 @@ if page == "LLM Configuration":
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Database Configuration":
     st.header("SQL Database Configuration")
-    st.write("Connect your database. The chatbot will query it directly.")
+    st.write("Connect your database. The chatbot will query it directly using Metadata RAG for high accuracy.")
 
     with st.form("db_form"):
-        db_type = st.selectbox("Database type", ["postgresql", "mysql", "sqlite"])
+        db_type = st.selectbox("Database type", ["mysql", "postgresql", "sqlite"])
         col1, col2 = st.columns(2)
         with col1:
             host = st.text_input("Host", value="localhost")
             database = st.text_input("Database name")
             username = st.text_input("Username")
         with col2:
-            port = st.number_input("Port", value=5432, step=1)
+            port = st.number_input("Port", value=3306 if db_type == "mysql" else 5432, step=1)
             password = st.text_input("Password", type="password")
+            fetch_schema = st.checkbox("Auto-fetch & Index Schema (Recommended)", value=True)
 
-        submitted = st.form_submit_button("Connect & Test", type="primary")
+        st.info("💡 Indexing the schema allows the AI to 'know' your tables and columns before generating SQL.")
+        submitted = st.form_submit_button("Connect & Sync Metadata", type="primary")
 
     if submitted:
         payload = {
             "host": host, "port": port, "database": database,
             "username": username, "password": password, "db_type": db_type,
         }
-        with st.spinner("Testing connection..."):
+        with st.spinner("Connecting and Indexing Metadata..."):
             r = requests.post(
-                f"{API_URL}/admin/db-config",
+                f"{API_URL}/admin/db-config?fetch_schema={str(fetch_schema).lower()}",
                 json=payload,
                 headers=auth_headers(),
             )
         if r.status_code == 200:
             data = r.json()
-            st.success("Connected!")
-            st.write(f"**Tables found:** {', '.join(data.get('tables', []))}")
+            st.success(data["message"])
+            st.write(f"**Indexed Tables:** {', '.join(data.get('tables', []))}")
         else:
-            st.error(f"Connection failed: {r.json().get('detail', r.text)}")
+            st.error(f"Failed: {r.json().get('detail', r.text)}")
 
     st.divider()
     st.subheader("Current connection")
@@ -199,6 +201,17 @@ elif page == "Test Chat":
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
+            if msg.get("sql"):
+                with st.expander("View Generated SQL"):
+                    st.code(msg["sql"], language="sql")
+            if msg.get("data"):
+                import pandas as pd
+                df = pd.DataFrame(msg["data"])
+                st.dataframe(df, use_container_width=True)
+                # Show simple chart if data is numeric
+                if len(df.columns) >= 2 and any(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns):
+                    st.caption("Auto-generated Chart Visualization")
+                    st.bar_chart(df, x=df.columns[0], y=df.columns[1])
             if msg.get("source"):
                 st.caption(f"Source: {msg['source']}")
 
@@ -216,10 +229,24 @@ elif page == "Test Chat":
             if r.status_code == 200:
                 data = r.json()
                 st.write(data["answer"])
+                
+                # Render SQL and Data if present
+                if data.get("sql"):
+                    with st.expander("View Generated SQL"):
+                        st.code(data["sql"], language="sql")
+                if data.get("data"):
+                    import pandas as pd
+                    df = pd.DataFrame(data["data"])
+                    st.dataframe(df, use_container_width=True)
+                    if len(df.columns) >= 2 and any(pd.api.types.is_numeric_dtype(df[c]) for c in df.columns):
+                        st.bar_chart(df, x=df.columns[0], y=df.columns[1])
+
                 st.caption(f"Source: {data['source']}")
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": data["answer"],
+                    "sql": data.get("sql"),
+                    "data": data.get("data"),
                     "source": data["source"],
                 })
             else:

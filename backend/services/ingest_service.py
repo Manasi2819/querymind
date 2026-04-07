@@ -6,7 +6,7 @@ Triggered automatically on every file upload (re-upload replaces old vectors).
 import os
 from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, CSVLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from services.embed_service import add_documents, delete_collection
 from config import get_settings
 

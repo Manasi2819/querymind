@@ -13,18 +13,19 @@ class LLMConfig(BaseModel):
     model: Optional[str] = None
 
 class DBConfig(BaseModel):
-    host: str
-    port: int = 5432
+    host: str = "localhost"
+    port: int = 3306
     database: str
     username: str
     password: str
-    db_type: str = "postgresql"   # postgresql | mysql | sqlite
-
+    db_type: str = "mysql"   # mysql | postgresql | sqlite
+    custom_schema: Optional[str] = None  # User provided documentation
+    
     @property
     def connection_url(self) -> str:
         if self.db_type == "sqlite":
             return f"sqlite:///{self.database}"
-        driver = "postgresql" if self.db_type == "postgresql" else "mysql+pymysql"
+        driver = "mysql+pymysql" if self.db_type == "mysql" else "postgresql"
         return f"{driver}://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 class ChatMessage(BaseModel):
@@ -38,6 +39,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    sql: Optional[str] = None
+    data: Optional[List[dict]] = None
     source: str        # "sql" | "rag" | "general"
     session_id: str
 

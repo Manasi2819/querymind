@@ -23,13 +23,23 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return TokenResponse(access_token=token)
 
 @router.post("/db-config")
-async def save_db_config(config: DBConfig, _=Depends(verify_token)):
+async def save_db_config(config: DBConfig, fetch_schema: bool = True, _=Depends(verify_token)):
+    from services.sql_metadata_service import index_db_metadata
+    
     result = test_connection(config.connection_url)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
+        
     _db_config.update(config.model_dump())
     _db_config["url"] = config.connection_url
-    return {"message": "Database configured", "tables": result["tables"]}
+    _db_config["db_type"] = config.db_type
+    
+    msg = "Database configured."
+    if fetch_schema:
+        count = index_db_metadata(config.connection_url, tenant_id="default")
+        msg += f" Auto-fetched and indexed {count} tables for RAG."
+        
+    return {"message": msg, "tables": result["tables"]}
 
 @router.get("/db-config")
 async def get_db_config(_=Depends(verify_token)):
@@ -65,6 +75,9 @@ async def upload_file(
 
 def get_db_url() -> str:
     return _db_config.get("url", "")
+
+def get_db_type() -> str:
+    return _db_config.get("db_type", "mysql")
 
 def get_llm_cfg() -> dict:
     return _llm_config

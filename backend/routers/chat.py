@@ -36,12 +36,27 @@ async def chat(request: ChatRequest):
 
     try:
         if intent == "sql":
-            answer = run_sql_query(question, db_url, provider, api_key)
+            from services.sql_rag_service import run_sql_rag_pipeline
+            from routers.admin import get_db_type
+            
+            answer, sql, data = run_sql_rag_pipeline(
+                question, 
+                tenant_id="default", 
+                db_url=db_url, 
+                db_type=get_db_type(), 
+                llm_provider=provider
+            )
             source = "sql"
+            save_turn(session_id, "user", question)
+            save_turn(session_id, "assistant", answer)
+            return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":
             answer = answer_from_docs(question, "default", "document", provider, api_key)
             source = "rag"
+            save_turn(session_id, "user", question)
+            save_turn(session_id, "assistant", answer)
+            return ChatResponse(answer=answer, source=source, session_id=session_id)
 
         else:
             llm = get_llm(provider=provider, api_key=api_key)
@@ -53,12 +68,9 @@ async def chat(request: ChatRequest):
             response = llm.invoke(messages)
             answer = response.content
             source = "general"
-
-        # Save to memory
-        save_turn(session_id, "user", question)
-        save_turn(session_id, "assistant", answer)
-
-        return ChatResponse(answer=answer, source=source, session_id=session_id)
+            save_turn(session_id, "user", question)
+            save_turn(session_id, "assistant", answer)
+            return ChatResponse(answer=answer, source=source, session_id=session_id)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

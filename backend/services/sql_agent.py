@@ -5,7 +5,6 @@ Uses LangChain's create_sql_agent with the user-configured DB.
 
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
-from langchain.agents import AgentType
 from services.llm_service import get_llm
 
 import re
@@ -36,7 +35,7 @@ def build_sql_agent(db_url: str, llm_provider: str = None, api_key: str = None):
     agent = create_sql_agent(
         llm=llm,
         db=db,
-        agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        agent_type="zero-shot-react-description",
         verbose=False,
         handle_parsing_errors=True,
     )

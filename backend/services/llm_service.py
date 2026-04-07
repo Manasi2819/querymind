@@ -17,7 +17,7 @@ def get_llm(provider: str = None, api_key: str = None, model: str = None) -> Bas
     provider = provider or settings.llm_provider
 
     if provider == "ollama":
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
         return ChatOllama(
             base_url=settings.ollama_base_url,
             model=model or settings.ollama_model,
@@ -49,7 +49,7 @@ def get_embed_model():
     Returns embedding model. Always uses Ollama nomic-embed-text locally
     (free, no API key needed) unless overridden.
     """
-    from langchain_community.embeddings import OllamaEmbeddings
+    from langchain_ollama import OllamaEmbeddings
     return OllamaEmbeddings(
         base_url=settings.ollama_base_url,
         model=settings.ollama_embed_model,
