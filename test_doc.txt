@@ -1,0 +1,5 @@
+QueryMind features:
+1. SQL RAG: Connect to SQL databases and query them with natural language.
+2. Doc RAG: Upload PDFs, Docs, and TXT files to create a knowledge base.
+3. Chat Memory: Enhanced memory that understands context across multiple turns.
+4. Deployment: Deploy as a widget or a standard API.

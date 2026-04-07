@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from routers import chat, admin, ingest
 from sqlalchemy.orm import Session
-from database import SessionLocal
+from database import SessionLocal, Base, engine
 from models.db_models import AdminUser
 from auth import get_password_hash
 from config import get_settings
@@ -18,6 +18,9 @@ app = FastAPI(
 
 @app.on_event("startup")
 def startup_event():
+    # Create tables
+    Base.metadata.create_all(bind=engine)
+    
     # Seed initial admin user if not exists
     db = SessionLocal()
     try:

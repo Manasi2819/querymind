@@ -5,7 +5,12 @@ import os
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="QueryMind Admin", page_icon="🧠", layout="wide")
-st.title("🧠 QueryMind — Admin Panel")
+
+# ── Inject Custom CSS ──────────────────────────────────────────────────
+with open("style.css") as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+st.markdown('<h1 class="premium-header">🧠 QueryMind — Admin Panel</h1>', unsafe_allow_html=True)
 
 # ── Session state ─────────────────────────────────────────────────────
 if "token" not in st.session_state:
@@ -38,14 +43,50 @@ if not st.session_state.token:
                 st.error("Invalid credentials")
     st.stop()
 
-# ── Sidebar nav ───────────────────────────────────────────────────────
 page = st.sidebar.radio(
     "Navigation",
-    ["LLM Configuration", "Database Configuration", "Upload Files", "Test Chat"],
+    ["Dashboard", "LLM Configuration", "Database Configuration", "Knowledge Base", "Test Chat"],
 )
 if st.sidebar.button("Logout"):
     st.session_state.token = None
     st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════
+# PAGE 0: Dashboard
+# ══════════════════════════════════════════════════════════════════════
+if page == "Dashboard":
+    st.header("System Overview")
+    
+    try:
+        r = requests.get(f"{API_URL}/admin/stats", headers=auth_headers())
+        if r.status_code == 200:
+            stats = r.json()
+            
+            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Indexed Tables", stats.get("tables", 0))
+            col2.metric("Knowledge Particles", stats.get("files", 0))
+            col3.metric("LLM Provider", stats.get("llm", "N/A"))
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # DB Status Card
+            st.subheader("Active Connections")
+            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+            if stats.get("db_connected"):
+                st.success("Database is connected and synced.")
+                if st.button("Disconnect Database", type="secondary"):
+                    requests.delete(f"{API_URL}/admin/db-config", headers=auth_headers())
+                    st.rerun()
+            else:
+                st.warning("No database connected. Go to 'Database Configuration' to get started.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        else:
+            st.error("Failed to load dashboard stats")
+    except:
+        st.error("Could not connect to backend service")
 
 # ══════════════════════════════════════════════════════════════════════
 # PAGE 1: LLM Configuration
@@ -106,10 +147,11 @@ elif page == "Database Configuration":
     st.header("SQL Database Configuration")
     st.write("Connect your database. The chatbot will query it directly using Metadata RAG for high accuracy.")
 
+    db_type = st.selectbox("Database type", ["mysql", "postgresql", "sqlite"])
+    method = st.radio("Connection Method", ["Detailed Fields", "Direct URL"], horizontal=True)
+
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     with st.form("db_form"):
-        db_type = st.selectbox("Database type", ["mysql", "postgresql", "sqlite"])
-        
-        method = st.radio("Connection Method", ["Detailed Fields", "Direct URL"], horizontal=True)
         
         url = None
         host = "localhost"
@@ -135,6 +177,7 @@ elif page == "Database Configuration":
 
         st.info("💡 Indexing the schema allows the AI to 'know' your tables and columns before generating SQL.")
         submitted = st.form_submit_button("Connect & Sync Metadata", type="primary")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if submitted:
         payload = {
@@ -166,40 +209,69 @@ elif page == "Database Configuration":
             st.warning("No database configured yet")
 
 # ══════════════════════════════════════════════════════════════════════
-# PAGE 3: Upload Files
+# PAGE 3: Knowledge Base
 # ══════════════════════════════════════════════════════════════════════
-elif page == "Upload Files":
-    st.header("Upload Context Files")
-    st.write("Upload files that the chatbot should know about. Re-uploading replaces the old version.")
+elif page == "Knowledge Base":
+    st.header("Knowledge Management")
+    st.write("Manage the documents and metadata that power your chatbot's intelligence.")
 
-    file_type = st.selectbox(
-        "File type",
-        ["document", "data_dict", "schema"],
-        help="data_dict = data dictionary, schema = DB schema docs, document = general context",
-    )
-
-    uploaded = st.file_uploader(
-        "Choose file",
-        type=["pdf", "docx", "txt", "csv"],
-        help="Supported: PDF, Word, plain text, CSV",
-    )
-
-    if uploaded and st.button("Upload & Embed", type="primary"):
-        with st.spinner(f"Processing {uploaded.name}..."):
-            r = requests.post(
-                f"{API_URL}/admin/upload",
-                files={"file": (uploaded.name, uploaded.getvalue(), uploaded.type)},
-                data={"file_type": file_type, "tenant_id": "default"},
-                headers=auth_headers(),
+    tab1, tab2 = st.tabs(["Upload New", "Managed Particles"])
+    
+    with tab1:
+        st.subheader("Ingest Data")
+        col_a, col_b = st.columns([2, 1])
+        
+        with col_a:
+            file_category = st.radio(
+                "Knowledge Category",
+                ["document", "knowledge_base"],
+                format_func=lambda x: "📖 General Document" if x == "document" else "🧠 DB Knowledge Base (SQL, JSON, MD)",
+                help="Knowledge Base files are prioritized for schema-related questions."
             )
-        if r.status_code == 200:
-            result = r.json()
-            if result.get("status") == "done":
-                st.success(f"Indexed {result['chunks']} chunks from {uploaded.name}")
-            else:
-                st.error(f"Error: {result.get('message')}")
-        else:
-            st.error(r.text)
+            
+            allowed = ["pdf", "docx", "txt"] if file_category == "document" else ["sql", "json", "md", "csv"]
+            uploaded = st.file_uploader(f"Upload {file_category} files", type=allowed)
+            
+        with col_b:
+            st.info("""**Support:**  
+- **Docs:** PDF, Word, TXT  
+- **KB:** SQL, JSON, MD, CSV""")
+            if uploaded and st.button("Upload & Index", type="primary", use_container_width=True):
+                with st.spinner("Processing..."):
+                    r = requests.post(
+                        f"{API_URL}/admin/upload",
+                        files={"file": (uploaded.name, uploaded.getvalue(), uploaded.type)},
+                        data={"file_type": file_category},
+                        headers=auth_headers(),
+                    )
+                if r.status_code == 200:
+                    st.success(f"Indexed {uploaded.name}")
+                    st.rerun()
+                else:
+                    st.error(r.text)
+
+    with tab2:
+        st.subheader("Your Knowledge Store")
+        try:
+            r = requests.get(f"{API_URL}/admin/files", headers=auth_headers())
+            if r.status_code == 200:
+                files = r.json()
+                if files:
+                    import pandas as pd
+                    df = pd.DataFrame(files)
+                    df = df[["filename", "file_type", "upload_date", "chunk_count"]]
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+                    
+                    st.divider()
+                    to_delete = st.selectbox("Select particle to remove", df["filename"].tolist())
+                    if st.button(f"Delete {to_delete}", type="secondary"):
+                        requests.delete(f"{API_URL}/admin/files/{to_delete}", headers=auth_headers())
+                        st.success("Deleted!")
+                        st.rerun()
+                else:
+                    st.info("No knowledge particles indexed yet.")
+        except:
+            st.error("Could not fetch file list")
 
 # ══════════════════════════════════════════════════════════════════════
 # PAGE 4: Test Chat

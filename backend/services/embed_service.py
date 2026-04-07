@@ -15,18 +15,29 @@ def get_vector_store(collection_name: str) -> Chroma:
         embedding_function=get_embed_model(),
     )
 
-def add_documents(texts: list[str], metadatas: list[dict], collection_name: str):
-    """Embeds and stores document chunks."""
-    from langchain_core.documents import Document
+def add_documents(texts: list, metadatas: list, collection_name: str) -> int:
+    """Embeds and saves documents to a persistent Chroma collection."""
     store = get_vector_store(collection_name)
-    docs = [Document(page_content=t, metadata=m) for t, m in zip(texts, metadatas)]
-    store.add_documents(docs)
-    return len(docs)
+    store.add_texts(list(texts), metadatas=metadatas)
+    return len(texts)
 
-def similarity_search(query: str, collection_name: str, k: int = 4) -> list:
-    """Returns top-k relevant chunks for a query."""
+def delete_by_metadata(collection_name: str, filter_dict: dict):
+    """Deletes documents from a collection that match the metadata filter."""
+    try:
+        store = get_vector_store(collection_name)
+        # ChromaDB as_retriever doesn't expose delete directy in LangChain wrapper
+        # We access the underlying collection
+        client = store._client
+        collection = client.get_collection(collection_name)
+        collection.delete(where=filter_dict)
+    except Exception as e:
+        # If collection doesn't exist, ignore
+        print(f"Delete mismatch: {str(e)}")
+
+def similarity_search(query: str, collection_name: str, k: int = 4, filter_dict: dict = None) -> list:
+    """Returns top-k relevant chunks for a query with optional metadata filtering."""
     store = get_vector_store(collection_name)
-    return store.similarity_search(query, k=k)
+    return store.similarity_search(query, k=k, filter=filter_dict)
 
 def delete_collection(collection_name: str):
     """Deletes all vectors in a collection (called when files are re-uploaded)."""

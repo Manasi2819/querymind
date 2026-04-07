@@ -61,6 +61,63 @@ async def get_db_config(token_data: dict = Depends(verify_token), db: Session = 
     safe = {k: v for k, v in cfg.items() if k != "password"}
     return {"configured": True, **safe}
 
+@router.get("/stats")
+async def get_stats(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    user_id = token_data.get("user_id")
+    file_count = db.query(UploadedFile).filter(UploadedFile.user_id == user_id).count()
+    
+    admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
+    table_count = 0
+    if admin_settings and admin_settings.db_config:
+        url = admin_settings.db_config.get("url")
+        res = test_connection(url)
+        table_count = len(res.get("tables", []))
+    
+    return {
+        "files": file_count,
+        "tables": table_count,
+        "llm": admin_settings.llm_config.get("provider", "Not configured") if admin_settings else "Not configured",
+        "db_connected": bool(admin_settings.db_config) if admin_settings else False
+    }
+
+@router.get("/files")
+async def list_files(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    user_id = token_data.get("user_id")
+    files = db.query(UploadedFile).filter(UploadedFile.user_id == user_id).all()
+    return files
+
+@router.delete("/files/{filename}")
+async def delete_file(filename: str, token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    from services.embed_service import delete_by_metadata
+    user_id = token_data.get("user_id")
+    
+    # Delete from Vector Store (both collections)
+    tenant_id = f"user_{user_id}"
+    delete_by_metadata(f"{tenant_id}_document", {"source": filename})
+    delete_by_metadata(f"{tenant_id}_knowledge_base", {"source": filename})
+    
+    # Delete from DB
+    db.query(UploadedFile).filter(
+        UploadedFile.user_id == user_id, 
+        UploadedFile.filename == filename
+    ).delete()
+    db.commit()
+    
+    # Optional: delete physical file if exists
+    filepath = Path(settings.upload_dir) / filename
+    if filepath.exists(): os.remove(filepath)
+        
+    return {"message": f"Deleted {filename} from knowledge store"}
+
+@router.delete("/db-config")
+async def delete_db_config(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    user_id = token_data.get("user_id")
+    admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
+    if admin_settings:
+        admin_settings.db_config = {}
+        db.commit()
+    return {"message": "Database access removed"}
+
 @router.post("/llm-config")
 async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
     user_id = token_data.get("user_id")
@@ -89,6 +146,7 @@ async def upload_file(
     file: UploadFile = File(...),
     file_type: str = Form("document"),
     token_data: dict = Depends(verify_token),
+    db: Session = Depends(get_db),
 ):
     from services.ingest_service import ingest_file
     user_id = token_data.get("user_id")
@@ -97,7 +155,7 @@ async def upload_file(
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     # Use user_id for tenant isolation
-    result = ingest_file(str(dest), f"user_{user_id}", file_type)
+    result = ingest_file(str(dest), f"user_{user_id}", file_type, db=db, user_id=user_id)
     return result
 
 # ── Helper functions for internal use ─────────────────────────────────

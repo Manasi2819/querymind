@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;700&display=swap');
+
+/* Global Styles */
+html, body, [data-testid="stAppViewContainer"] {
+    font-family: 'Inter', sans-serif;
+    color: #1E293B;
+    background-color: #F8FAFC !important;
+}
+
+h1, h2, h3 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700 !important;
+    color: #0F172A;
+}
+
+/* Sidebar Styling */
+[data-testid="stSidebar"] {
+    background-color: #FFFFFF !important;
+    border-right: 1px solid #E2E8F0;
+}
+
+[data-testid="stSidebarNav"] {
+    padding-top: 2rem;
+}
+
+/* Glassmorphism Card Effect */
+.glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+    margin-bottom: 1.5rem;
+}
+
+/* Premium Button Styling */
+.stButton > button {
+    border-radius: 12px !important;
+    padding: 0.6rem 1.5rem !important;
+    font-weight: 600 !important;
+    transition: all 0.3s ease !important;
+    border: none !important;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+}
+
+/* Input Styles */
+.stTextInput > div > div > input, .stSelectbox > div > div > select {
+    border-radius: 10px !important;
+    border: 1px solid #E2E8F0 !important;
+    padding: 0.5rem 1rem !important;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #2563EB !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+}
+
+/* Metrics and Dataframes */
+[data-testid="stMetricValue"] {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    color: #2563EB;
+}
+
+.stDataFrame {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #E2E8F0;
+}
+
+/* Custom Header Styling */
+.premium-header {
+    background: linear-gradient(135deg, #2563EB 0%, #7C3AED 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}

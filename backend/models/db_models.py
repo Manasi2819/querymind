@@ -24,3 +24,13 @@ class AdminSettings(Base):
     api_keys = Column(JSON, default={})
     
     owner = relationship("AdminUser", back_populates="settings")
+
+class UploadedFile(Base):
+    __tablename__ = "uploaded_files"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("admin_users.id"), index=True)
+    filename = Column(String, index=True)
+    file_type = Column(String)  # 'document' or 'knowledge_base'
+    upload_date = Column(String)
+    chunk_count = Column(Integer, default=0)

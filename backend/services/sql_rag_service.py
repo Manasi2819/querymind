@@ -17,29 +17,64 @@ def get_chroma_client():
 def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 3) -> str:
     """
     Search ChromaDB for the most relevant table/column metadata chunks.
+    Prioritizes auto-indexed metadata, but also checks the "Knowledge Base"
+    for user-provided schema context (DASHBOARD feature).
     """
     client = get_chroma_client()
-    collection_name = f"{tenant_id}_sql_metadata"
-    
-    try:
-        collection = client.get_collection(name=collection_name)
-    except:
-        return "No database metadata found. Please fetch schema in Admin first."
-
-    # Embed the query
     embed_model = get_embed_model()
     query_embedding = embed_model.embed_query(query)
     
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=k
-    )
+    contexts = []
     
-    if not results or not results['documents'][0]:
-        return "No relevant metadata found for this query."
+    # 1. Primary: Auto-indexed SQL Metadata
+    try:
+        col_sql = client.get_collection(name=f"{tenant_id}_sql_metadata")
+        res_sql = col_sql.query(query_embeddings=[query_embedding], n_results=k)
+        if res_sql and res_sql['documents'][0]:
+            contexts.extend(res_sql['documents'][0])
+    except:
+        pass
+
+    # 2. Secondary: User-provided Knowledge Base (SQL, JSON, MD schema info)
+    try:
+        col_kb = client.get_collection(name=f"{tenant_id}_knowledge_base")
+        res_kb = col_kb.query(query_embeddings=[query_embedding], n_results=2)
+        if res_kb and res_kb['documents'][0]:
+            contexts.append("### EXTENDED USER KNOWLEDGE BASE CONTEXT:")
+            contexts.extend(res_kb['documents'][0])
+    except:
+        pass
+    
+    if not contexts:
+        return "No relevant metadata found. Please configure database or upload knowledge base files."
         
-    context = "\n\n".join(results['documents'][0])
-    return context
+    return "\n\n".join(contexts)
+
+def rewrite_query(question: str, history: str = "", llm_provider: str = None) -> str:
+    """
+    Rewrites the user's question to be self-contained using chat history.
+    Example: "What is his email?" -> "What is the email of the CEO of Acme Corp?"
+    """
+    if not history:
+        return question
+        
+    llm = get_llm(provider=llm_provider)
+    prompt = f"""Given the following conversation history and a follow-up question, rewrite the follow-up question to be a standalone, self-contained question for a SQL database.
+    If the follow-up question is already self-contained, return it as is.
+    Ensure any pronouns (he, she, it, they, their, this, that) are resolved to the original subject.
+    Only return the rewritten question text.
+
+    ### CONVERSATION HISTORY:
+    {history}
+
+    ### FOLLOW-UP QUESTION:
+    {question}
+
+    ### STANDALONE QUESTION:"""
+    
+    response = llm.invoke(prompt)
+    rewritten = response.content.strip()
+    return rewritten
 
 def generate_sql(question: str, schema_context: str, engine_type: str = "mysql", llm_provider: str = None) -> str:
     """
@@ -120,21 +155,25 @@ def execute_query(sql: str, connection_url: str) -> tuple:
     except Exception as e:
         raise Exception(f"SQL execution failed: {str(e)}")
 
-def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None):
+def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, history: str = ""):
     """
     The full high-level pipeline with retry logic for SQL correction.
+    Now includes query rewriting for context-awareness.
     """
+    # 0. Context check & rewrite
+    rewritten_question = rewrite_query(question, history, llm_provider)
+    
     # 1. Retrieve (Initial)
-    schema_context = retrieve_relevant_schema(question, tenant_id, k=3)
+    schema_context = retrieve_relevant_schema(rewritten_question, tenant_id, k=3)
     
     # 2. Generate (Initial)
-    sql = generate_sql(question, schema_context, engine_type=db_type, llm_provider=llm_provider)
+    sql = generate_sql(rewritten_question, schema_context, engine_type=db_type, llm_provider=llm_provider)
     
     # Handle initial "Schema insufficient"
     if sql.startswith("ERROR"):
         # USER REQUEST: Try once more by retrieving expanded schema
-        schema_context = retrieve_relevant_schema(question, tenant_id, k=10)
-        sql = generate_sql(question, schema_context, engine_type=db_type, llm_provider=llm_provider)
+        schema_context = retrieve_relevant_schema(rewritten_question, tenant_id, k=10)
+        sql = generate_sql(rewritten_question, schema_context, engine_type=db_type, llm_provider=llm_provider)
         if sql.startswith("ERROR"):
             return "I don't have enough information about your database to answer that.", None, None
         
@@ -149,7 +188,7 @@ def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: st
             
             # 4. Final Answer formatting (Success case)
             llm = get_llm(provider=llm_provider)
-            summary_prompt = f"The user asked: {question}\nThe SQL used was: {final_sql}\nThe resulting data is: {data[:5]}\n\nPlease provide a very brief summary of these results (1 sentence)."
+            summary_prompt = f"The user asked: {rewritten_question}\nThe SQL used was: {final_sql}\nThe resulting data is: {data[:5]}\n\nPlease provide a very brief summary of these results (1 sentence)."
             summary = llm.invoke(summary_prompt).content
             
             return summary, final_sql, data
@@ -161,7 +200,7 @@ def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: st
             if attempts < max_retries:
                 # pass the error back to LLM for correction
                 sql = generate_corrected_sql(
-                    question=question,
+                    question=rewritten_question,
                     schema_context=schema_context,
                     failed_sql=sql,
                     error_message=last_error,

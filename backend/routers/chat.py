@@ -53,7 +53,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 tenant_id=tenant_id, 
                 db_url=db_url, 
                 db_type=db_type, 
-                llm_provider=provider
+                llm_provider=provider,
+                history=history
             )
             source = "sql"
             save_turn(session_id, "user", question)
@@ -61,7 +62,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":
-            answer = answer_from_docs(question, tenant_id, "document", provider, api_key)
+            answer = answer_from_docs(question, tenant_id, "document", provider, api_key, history=history)
             source = "rag"
             save_turn(session_id, "user", question)
             save_turn(session_id, "assistant", answer)

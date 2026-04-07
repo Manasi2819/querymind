@@ -17,19 +17,27 @@ def save_turn(session_id: str, role: str, content: str):
             "timestamp": datetime.utcnow().isoformat(),
             "turn_id": str(uuid.uuid4()),
         }],
-        collection_name=f"memory_{session_id}",
+        collection_name="chat_memory",
     )
 
-def get_relevant_history(session_id: str, query: str, k: int = 4) -> str:
+def get_relevant_history(session_id: str, query: str, k: int = 5) -> str:
     """Returns recent relevant chat history as a formatted string."""
     try:
-        results = similarity_search(query, f"memory_{session_id}", k=k)
+        results = similarity_search(
+            query, 
+            "chat_memory", 
+            k=k, 
+            filter_dict={"session_id": session_id}
+        )
         if not results:
             return ""
+        
+        # Sort by timestamp if available to keep chronological context
         history = "\n".join(
             f"[{r.metadata.get('role','?')}] {r.page_content}"
             for r in results
         )
         return f"Relevant conversation history:\n{history}\n"
-    except Exception:
+    except Exception as e:
+        print(f"Memory retrieval error: {str(e)}")
         return ""

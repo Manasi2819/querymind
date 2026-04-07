@@ -4,13 +4,36 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 import passlib.handlers.bcrypt
+import bcrypt
 
-# ── PATCH: passlib 1.7.4 + bcrypt 4.0.1 compatibility ────────────
-# passlib's detect_wrap_bug fails with bcrypt 4.0.1 due to 72-byte limit
-# We patch it at the module level to be safe.
-if hasattr(passlib.handlers.bcrypt, 'detect_wrap_bug'):
-    passlib.handlers.bcrypt.detect_wrap_bug = lambda h: False
-# ─────────────────────────────────────────────────────────────────
+# --- Robust Patch for passlib 1.7.4 + bcrypt 4.0.0+ Compatibility ---
+# passlib's internal tests for "wrap bug" use passwords > 72 bytes.
+# Modern bcrypt raises ValueError for passwords > 72 bytes.
+# This patch truncates passwords at the bcrypt library level to fix the crash.
+
+_original_hashpw = bcrypt.hashpw
+def patched_hashpw(password, salt):
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+    if len(password) > 72:
+        password = password[:72]
+    return _original_hashpw(password, salt)
+bcrypt.hashpw = patched_hashpw
+
+_original_checkpw = bcrypt.checkpw
+def patched_checkpw(password, hashed_password):
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+    if len(password) > 72:
+        password = password[:72]
+    return _original_checkpw(password, hashed_password)
+bcrypt.checkpw = patched_checkpw
+
+# Ensure bcrypt has __about__ for passlib compatibility
+if not hasattr(bcrypt, "__about__"):
+    class Dummy: __version__ = bcrypt.__version__
+    bcrypt.__about__ = Dummy()
+# --------------------------------------------------------------------
 
 from config import get_settings
 
