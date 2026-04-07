@@ -12,7 +12,7 @@ from services.llm_service import get_llm, get_embed_model
 settings = get_settings()
 
 def get_chroma_client():
-    return chromadb.PersistentClient(path=settings.chroma_db_path)
+    return chromadb.PersistentClient(path=settings.chroma_persist_dir)
 
 def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 3) -> str:
     """
