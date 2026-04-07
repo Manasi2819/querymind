@@ -1,32 +1,42 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+from database import get_db
 from models.schemas import ChatRequest, ChatResponse
 from services.intent_classifier import classify_intent
-from services.sql_agent import run_sql_query
+# from services.sql_agent import run_sql_query  # Not used anymore?
 from services.rag_service import answer_from_docs
 from services.memory_service import save_turn, get_relevant_history
 from services.llm_service import get_llm
-from routers.admin import get_db_url, get_llm_cfg
+from routers.admin import get_db_url, get_llm_cfg, get_db_type
 from langchain_core.messages import HumanMessage, SystemMessage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     question = request.message
     session_id = request.session_id
 
+    # For chat widget (which may be public), we use the first admin's settings
+    # unless a tenant_id can be derived from elsewhere.
+    # For now, we default to user_id=1.
+    DEFAULT_USER_ID = 1
+
     # Override LLM config if provided in request
-    llm_cfg = get_llm_cfg()
+    llm_cfg = get_llm_cfg(db_session=db, user_id=DEFAULT_USER_ID)
     if request.llm_config:
         llm_cfg = request.llm_config.model_dump(exclude_none=True)
 
     provider = llm_cfg.get("provider", "ollama")
     api_key = llm_cfg.get("api_key")
 
-    db_url = get_db_url()
+    db_url = get_db_url(db_session=db, user_id=DEFAULT_USER_ID)
+    db_type = get_db_type(db_session=db, user_id=DEFAULT_USER_ID)
     has_db = bool(db_url)
-    # Check if docs were ingested (rough check — in production, store this in DB)
-    has_docs = True
+    
+    # We use f"user_{DEFAULT_USER_ID}" as the tenant_id for RAG lookup
+    tenant_id = f"user_{DEFAULT_USER_ID}"
+    has_docs = True # Rougly assumed
 
     # Get relevant past turns
     history = get_relevant_history(session_id, question)
@@ -37,13 +47,12 @@ async def chat(request: ChatRequest):
     try:
         if intent == "sql":
             from services.sql_rag_service import run_sql_rag_pipeline
-            from routers.admin import get_db_type
             
             answer, sql, data = run_sql_rag_pipeline(
                 question, 
-                tenant_id="default", 
+                tenant_id=tenant_id, 
                 db_url=db_url, 
-                db_type=get_db_type(), 
+                db_type=db_type, 
                 llm_provider=provider
             )
             source = "sql"
@@ -52,7 +61,7 @@ async def chat(request: ChatRequest):
             return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":
-            answer = answer_from_docs(question, "default", "document", provider, api_key)
+            answer = answer_from_docs(question, tenant_id, "document", provider, api_key)
             source = "rag"
             save_turn(session_id, "user", question)
             save_turn(session_id, "assistant", answer)
@@ -73,6 +82,8 @@ async def chat(request: ChatRequest):
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
     except Exception as e:
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/health")

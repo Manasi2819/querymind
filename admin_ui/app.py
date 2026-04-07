@@ -108,21 +108,37 @@ elif page == "Database Configuration":
 
     with st.form("db_form"):
         db_type = st.selectbox("Database type", ["mysql", "postgresql", "sqlite"])
-        col1, col2 = st.columns(2)
-        with col1:
-            host = st.text_input("Host", value="localhost")
-            database = st.text_input("Database name")
-            username = st.text_input("Username")
-        with col2:
-            port = st.number_input("Port", value=3306 if db_type == "mysql" else 5432, step=1)
-            password = st.text_input("Password", type="password")
-            fetch_schema = st.checkbox("Auto-fetch & Index Schema (Recommended)", value=True)
+        
+        method = st.radio("Connection Method", ["Detailed Fields", "Direct URL"], horizontal=True)
+        
+        url = None
+        host = "localhost"
+        port = 3306
+        database = ""
+        username = ""
+        password = ""
+        
+        if method == "Direct URL":
+            url = st.text_input("Connection URL", placeholder="mysql+pymysql://user:pass@host:port/db")
+            st.caption("💡 Supported formats: mysql+pymysql://, postgresql://, sqlite:///")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                host = st.text_input("Host", value="localhost")
+                database = st.text_input("Database name")
+                username = st.text_input("Username")
+            with col2:
+                port = st.number_input("Port", value=3306 if db_type == "mysql" else 5432, step=1)
+                password = st.text_input("Password", type="password")
+        
+        fetch_schema = st.checkbox("Auto-fetch & Index Schema (Recommended)", value=True)
 
         st.info("💡 Indexing the schema allows the AI to 'know' your tables and columns before generating SQL.")
         submitted = st.form_submit_button("Connect & Sync Metadata", type="primary")
 
     if submitted:
         payload = {
+            "url": url,
             "host": host, "port": port, "database": database,
             "username": username, "password": password, "db_type": db_type,
         }

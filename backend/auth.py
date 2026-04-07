@@ -2,10 +2,20 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
 from config import get_settings
 
 settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/admin/token")
+
+# Password hashing setup
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -16,6 +26,7 @@ def create_access_token(data: dict) -> str:
 def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        # payload will contain {"sub": username, "user_id": 1}
         return payload
     except JWTError:
         raise HTTPException(

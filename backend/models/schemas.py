@@ -13,16 +13,19 @@ class LLMConfig(BaseModel):
     model: Optional[str] = None
 
 class DBConfig(BaseModel):
-    host: str = "localhost"
-    port: int = 3306
-    database: str
-    username: str
-    password: str
+    url: Optional[str] = None  # Direct connection URL
+    host: Optional[str] = "localhost"
+    port: Optional[int] = 3306
+    database: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
     db_type: str = "mysql"   # mysql | postgresql | sqlite
     custom_schema: Optional[str] = None  # User provided documentation
     
     @property
     def connection_url(self) -> str:
+        if self.url:
+            return self.url
         if self.db_type == "sqlite":
             return f"sqlite:///{self.database}"
         driver = "mysql+pymysql" if self.db_type == "mysql" else "postgresql"

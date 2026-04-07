@@ -1,9 +1,13 @@
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__))
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from routers import chat, admin, ingest
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models.db_models import AdminUser
+from auth import get_password_hash
+from config import get_settings
+
+settings = get_settings()
 
 app = FastAPI(
     title="QueryMind API",
@@ -11,9 +15,26 @@ app = FastAPI(
     version="1.0.0",
 )
 
+@app.on_event("startup")
+def startup_event():
+    # Seed initial admin user if not exists
+    db = SessionLocal()
+    try:
+        admin_user = db.query(AdminUser).filter(AdminUser.username == settings.admin_username).first()
+        if not admin_user:
+            print(f"Seeding initial admin user: {settings.admin_username}")
+            new_admin = AdminUser(
+                username=settings.admin_username,
+                password_hash=get_password_hash(settings.admin_password)
+            )
+            db.add(new_admin)
+            db.commit()
+    finally:
+        db.close()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # Restrict in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
