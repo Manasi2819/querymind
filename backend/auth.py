@@ -3,6 +3,15 @@ from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
+import passlib.handlers.bcrypt
+
+# ── PATCH: passlib 1.7.4 + bcrypt 4.0.1 compatibility ────────────
+# passlib's detect_wrap_bug fails with bcrypt 4.0.1 due to 72-byte limit
+# We patch it at the module level to be safe.
+if hasattr(passlib.handlers.bcrypt, 'detect_wrap_bug'):
+    passlib.handlers.bcrypt.detect_wrap_bug = lambda h: False
+# ─────────────────────────────────────────────────────────────────
+
 from config import get_settings
 
 settings = get_settings()

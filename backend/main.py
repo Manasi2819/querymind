@@ -6,6 +6,7 @@ from database import SessionLocal
 from models.db_models import AdminUser
 from auth import get_password_hash
 from config import get_settings
+import os
 
 settings = get_settings()
 

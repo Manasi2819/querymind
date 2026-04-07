@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Admin
     admin_username: str = "admin"
-    admin_password: str = "changeme"
+    admin_password: str = "admin123"
 
     class Config:
         env_file = (".env", "../.env")
