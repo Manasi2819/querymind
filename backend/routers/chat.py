@@ -16,26 +16,22 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     question = request.message
     session_id = request.session_id
-
-    # For chat widget (which may be public), we use the first admin's settings
-    # unless a tenant_id can be derived from elsewhere.
-    # For now, we default to user_id=1.
-    DEFAULT_USER_ID = 1
+    user_id = request.user_id or 1
 
     # Override LLM config if provided in request
-    llm_cfg = get_llm_cfg(db_session=db, user_id=DEFAULT_USER_ID)
+    llm_cfg = get_llm_cfg(db_session=db, user_id=user_id)
     if request.llm_config:
         llm_cfg = request.llm_config.model_dump(exclude_none=True)
 
     provider = llm_cfg.get("provider", "ollama")
     api_key = llm_cfg.get("api_key")
 
-    db_url = get_db_url(db_session=db, user_id=DEFAULT_USER_ID)
-    db_type = get_db_type(db_session=db, user_id=DEFAULT_USER_ID)
+    db_url = get_db_url(db_session=db, user_id=user_id)
+    db_type = get_db_type(db_session=db, user_id=user_id)
     has_db = bool(db_url)
     
-    # We use f"user_{DEFAULT_USER_ID}" as the tenant_id for RAG lookup
-    tenant_id = f"user_{DEFAULT_USER_ID}"
+    # We use f"user_{user_id}" as the tenant_id for RAG lookup
+    tenant_id = f"user_{user_id}"
     has_docs = True # Rougly assumed
 
     # Get relevant past turns

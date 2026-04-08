@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import os, json, shutil
 from pathlib import Path
 from auth import create_access_token, verify_token, verify_password, get_password_hash
-from models.schemas import DBConfig, LLMConfig, TokenResponse
+from models.schemas import DBConfig, LLMConfig, TokenResponse, UserRegistration
 from models.db_models import AdminUser, AdminSettings, UploadedFile
 from services.sql_agent import test_connection
 from config import get_settings
@@ -12,6 +12,28 @@ from database import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 settings = get_settings()
+
+@router.post("/register")
+async def register(data: UserRegistration, db: Session = Depends(get_db)):
+    # Check if user exists
+    existing = db.query(AdminUser).filter(AdminUser.username == data.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    
+    # Create user
+    new_user = AdminUser(
+        username=data.username,
+        password_hash=get_password_hash(data.password)
+    )
+    db.add(new_user)
+    db.flush() # Get ID
+    
+    # Init settings
+    settings = AdminSettings(user_id=new_user.id)
+    db.add(settings)
+    db.commit()
+    
+    return {"message": "User registered successfully", "user_id": new_user.id}
 
 @router.post("/token", response_model=TokenResponse)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

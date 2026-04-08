@@ -81,6 +81,7 @@
 
 <script>
   const API_URL = "http://localhost:8000";    // Change to your deployed URL
+  const USER_ID = 1;                          // Replace with your unique Vendor ID
   const sessionId = Math.random().toString(36).slice(2);
   let panelOpen = false;
 
@@ -129,7 +130,11 @@
       const r = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, session_id: sessionId }),
+        body: JSON.stringify({ 
+          message: msg, 
+          session_id: sessionId,
+          user_id: USER_ID 
+        }),
       });
       const data = await r.json();
       removeTyping();
