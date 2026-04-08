@@ -16,7 +16,7 @@ class DBConfig(BaseModel):
     url: Optional[str] = None  # Direct connection URL
     host: Optional[str] = "localhost"
     port: Optional[int] = 3306
-    database: Optional[str] = None
+    database: Optional[str] = None 
     username: Optional[str] = None
     password: Optional[str] = None
     db_type: str = "mysql"   # mysql | postgresql | sqlite
@@ -38,6 +38,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str
+    user_id: Optional[int] = 1 # Default to 1 for backward compatibility
     llm_config: Optional[LLMConfig] = None
 
 class ChatResponse(BaseModel):
@@ -52,6 +53,10 @@ class IngestStatus(BaseModel):
     status: str        # "processing" | "done" | "error"
     chunks: int = 0
     message: str = ""
+
+class UserRegistration(BaseModel):
+    username: str
+    password: str
 
 class TokenRequest(BaseModel):
     username: str
