@@ -86,7 +86,13 @@ def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=N
             file_record.chunk_count = count
             db.commit()
 
+        if count == 0:
+            return {"status": "error", "chunks": 0, "message": f"No text content found in {filename} to index."}
+
         return {"status": "done", "chunks": count, "message": f"Indexed {count} chunks for {filename}"}
 
     except Exception as e:
+        import traceback
+        error_msg = f"Ingestion error: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
         return {"status": "error", "chunks": 0, "message": str(e)}

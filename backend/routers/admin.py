@@ -5,7 +5,7 @@ import os, json, shutil
 from pathlib import Path
 from auth import create_access_token, verify_token, verify_password, get_password_hash
 from models.schemas import DBConfig, LLMConfig, TokenResponse
-from models.db_models import AdminUser, AdminSettings
+from models.db_models import AdminUser, AdminSettings, UploadedFile
 from services.sql_agent import test_connection
 from config import get_settings
 from database import get_db
@@ -156,6 +156,8 @@ async def upload_file(
         shutil.copyfileobj(file.file, f)
     # Use user_id for tenant isolation
     result = ingest_file(str(dest), f"user_{user_id}", file_type, db=db, user_id=user_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message", "Unknown ingestion error"))
     return result
 
 # ── Helper functions for internal use ─────────────────────────────────

@@ -215,6 +215,10 @@ elif page == "Knowledge Base":
     st.header("Knowledge Management")
     st.write("Manage the documents and metadata that power your chatbot's intelligence.")
 
+    if "upload_success" in st.session_state:
+        st.success(st.session_state.upload_success)
+        del st.session_state.upload_success
+
     tab1, tab2 = st.tabs(["Upload New", "Managed Particles"])
     
     with tab1:
@@ -245,10 +249,16 @@ elif page == "Knowledge Base":
                         headers=auth_headers(),
                     )
                 if r.status_code == 200:
-                    st.success(f"Indexed {uploaded.name}")
+                    data = r.json()
+                    chunks = data.get("chunks", 0)
+                    st.session_state.upload_success = f"✅ Success: File **{uploaded.name}** has been indexed and chunked into {chunks} parts. It is now available in **Managed Particles**."
                     st.rerun()
                 else:
-                    st.error(r.text)
+                    try:
+                        err_detail = r.json().get("detail", r.text)
+                    except:
+                        err_detail = r.text
+                    st.error(f"❌ Indexing Failed: {err_detail}")
 
     with tab2:
         st.subheader("Your Knowledge Store")
