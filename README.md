@@ -40,9 +40,8 @@ If you prefer to run services manually without Docker:
 ```bash
 cd backend
 python -m venv venv
-source venv/Scripts/activate # Windows
-# or source venv/bin/activate # Linux/Mac
-
+source venv/Scripts/activate     # on Windows  on Linux/Mac source venv/bin/activate
+cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
@@ -86,5 +85,3 @@ streamlit run app.py --server.port 8501
 ## 🤝 Contributing
 Feel free to open issues or submit pull requests for any improvements.
 
-## 📄 License
-MIT
