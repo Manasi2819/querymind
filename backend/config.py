@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ── Auth ──────────────────────────────────────────────────────────────
-    jwt_secret_key: str = "change_this"
+    jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
     fernet_key: str = ""
@@ -39,8 +39,11 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
 
     # ── Admin credentials ─────────────────────────────────────────────────
-    admin_username: str = "admin"
-    admin_password: str = "admin123"
+    admin_username: str = ""
+    admin_password: str = ""
+
+    # ── Infrastructure Credentials ────────────────────────────────────────
+    postgres_password: str = "changeme"
 
     class Config:
         env_file = (".env", "../.env")
