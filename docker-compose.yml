@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # Metadata Database (Managed by backend via SQLAlchemy)
   postgres:
     image: postgres:16-alpine
     environment:
@@ -12,11 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
+  # Vector Database (Required for Knowledge Base and RAG)
   chromadb:
     image: chromadb/chroma:latest
     ports:
@@ -24,24 +21,33 @@ services:
     volumes:
       - chroma_data:/chroma/chroma
 
+  # Backend API (FastAPI)
   backend:
-    build: ./backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://querymind_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/querymind
+      - CHROMA_PERSIST_DIR=/app/chroma_db
     depends_on:
       - postgres
-      - redis
       - chromadb
     volumes:
       - ./uploads:/app/uploads
+      - ./chroma_db:/app/chroma_db
 
-  admin_ui:
-    build: ./admin_ui
+  # Frontend Admin Panel (Vite + React)
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
-      - "8501:8501"
+      - "80:80"
     environment:
-      - API_URL=http://backend:8000
+      - VITE_API_URL=http://localhost:8000
     depends_on:
       - backend
 

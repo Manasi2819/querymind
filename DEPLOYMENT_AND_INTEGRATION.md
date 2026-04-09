@@ -1,243 +1,134 @@
 # QueryMind — Deployment & Integration Guide
 
-This guide covers production deployment, multi-user setup, and embedding the chatbot widget into external web applications.
+This guide covers production deployment, environment configuration, and how to embed the QueryMind chatbot into any external web application.
 
 ---
 
 ## 🏗️ Stack Overview
 
-| Component | Technology | Port |
+| Component | Technology | Role |
 |---|---|---|
-| Backend API | FastAPI + Uvicorn | 8000 |
-| React Admin Panel | Vite + React 18 | 5173 |
-| Vector Store | ChromaDB (local) | — |
-| Metadata DB | SQLite | — |
+| **Backend API** | FastAPI + Uvicorn | Request handling, LLM orchestration, and RAG logic |
+| **Admin Panel** | Vite + React | Dashboard for managing DB connections and Knowledge Base |
+| **Metadata DB** | SQLite (default) | Stores users, settings, and file records |
+| **Vector Store** | ChromaDB | High-performance semantic search for context retrieval |
+
+---
+
+## 🔑 Environment Configuration
+
+QueryMind uses a `.env` file for all critical settings. Before deploying, copy the example file and fill in your keys:
+
+```bash
+cp .env.example .env
+```
+
+### Required Variables
+| Variable | Description | Example |
+|---|---|---|
+| `LLM_PROVIDER` | AI provider to use | `ollama`, `openai`, `gemini`, etc. |
+| `JWT_SECRET_KEY` | Random string for signing tokens | `openssl rand -hex 32` |
+| `FERNET_KEY` | Key for encrypting DB credentials | Generate via `cryptography.fernet` |
+| `ADMIN_USERNAME` | Default admin login (seeded on starts) | `admin` |
+| `ADMIN_PASSWORD` | Default admin password | `password123` |
+
+### Provider Specific (Fill at least one)
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`
+- `OLLAMA_BASE_URL` (Default: `http://localhost:11434`)
+
+### Database Overrides (Optional)
+| Variable | Description | Example |
+|---|---|---|
+| `DATABASE_URL` | SQLAlchemy connection string | `postgresql://user:pass@host/db` |
+| `CHROMA_PERSIST_DIR` | Folder for vector storage | `./chroma_db` |
 
 ---
 
 ## 🚀 Production Deployment
 
-### Option A — Manual (Recommended for Development)
+### Option A — Docker Compose (Recommended)
 
-#### Terminal 1 — Backend
-
-```powershell
-# From querymind/ root
-.\venv\Scripts\Activate.ps1          # Windows PowerShell
-# OR: source venv/bin/activate       # Mac / Linux
-
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-> Remove `--reload` flag in production (it's for dev only).
-
-#### Terminal 2 — React Frontend (Dev Server)
+Docker is the easiest way to run QueryMind in production. It orchestrates the backend, frontend, and databases automatically.
 
 ```powershell
-cd frontend
-npm run dev
-```
-
-> For production builds (served by a static host or nginx):
-> ```powershell
-> cd frontend
-> npm run build       # outputs to frontend/dist/
-> ```
-
----
-
-### Option B — Docker Compose
-
-```powershell
-# From querymind/ root:
-
-# Build and start all backend services
+# From the project root
 docker-compose up -d --build
-
-# Then start the React frontend (Vite dev server):
-cd frontend
-npm install
-npm run dev
 ```
 
-Access:
-- React Admin Panel → http://localhost:5173
-- Backend API Docs → http://localhost:8000/docs
+**Access Points:**
+- **Admin Dashboard**: http://localhost (Port 80)
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-> **Note:** The `docker-compose.yml` covers the FastAPI backend and ChromaDB. The React frontend runs via `npm run dev` or a static server.
+### Option B — Manual Deployment
+
+1. **Backend**:
+   ```powershell
+   cd backend
+   pip install -r requirements.txt
+   uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+
+2. **Frontend**:
+   ```powershell
+   cd frontend
+   npm install
+   npm run build
+   # Serve the 'dist' folder using Nginx, Apache, or a static host like Vercel.
+   ```
 
 ---
 
-## 👤 First-Time Admin Setup
+## 👤 First-Time Setup
 
-After the backend is running, register the admin user **once**:
-
-```powershell
-# Windows PowerShell
-Invoke-RestMethod -Uri "http://localhost:8000/admin/register" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{"username": "admin", "password": "admin123"}'
-```
-
-```bash
-# curl (Linux / Mac / Git Bash)
-curl -X POST http://localhost:8000/admin/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin123"}'
-```
-
-Expected response:
-```json
-{ "message": "User registered successfully", "user_id": 1 }
-```
+1. **Automatic Seeding**: On the first run, the system automatically creates the admin user from your `.env` variables (`ADMIN_USERNAME` and `ADMIN_PASSWORD`).
+2. **Login**: Visit the Admin Panel and log in with those credentials.
+3. **Connect Data**:
+   - Go to **Database Config** to link your operational database (MySQL/Postgres/etc).
+   - Go to **Knowledge Base** to upload PDF/Text files for semantic search.
 
 ---
 
-## 👥 Multi-User Setup
+## 🤖 Integrating the Chatbot Widget
 
-QueryMind supports multiple independent users with fully isolated data.
+The QueryMind widget is designed to be "pluggable" into any host website (e.g., a CRM, E-commerce site, or internal portal).
 
-### Register Additional Users
+### 1. Locate the Widget
+The standalone HTML/JS implementation is found at:
+`querymind/widget/chat_widget.html`
 
-```bash
-curl -X POST http://localhost:8000/admin/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "vendor_a", "password": "secure_pass_1"}'
-
-curl -X POST http://localhost:8000/admin/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "vendor_b", "password": "secure_pass_2"}'
-```
-
-### How Isolation Works
-
-Each user gets their own:
-- JWT token (obtained via `POST /admin/token`)
-- Database connection config
-- ChromaDB collection (prefixed with `user_{id}_document` and `user_{id}_knowledge_base`)
-- Uploaded file records
-
-**Vendor A cannot access Vendor B's data — ever.**
-
----
-
-## 🔑 Getting a JWT Token (for API Testing)
-
-```bash
-curl -X POST http://localhost:8000/admin/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin&password=admin123"
-```
-
-Response:
-```json
-{ "access_token": "eyJ...", "token_type": "bearer" }
-```
-
-Use the token in subsequent requests:
-```bash
-curl -H "Authorization: Bearer eyJ..." http://localhost:8000/admin/stats
-```
-
----
-
-## 🤖 Chatbot Widget — Embedding in External Apps
-
-The embeddable widget lets any web application host a QueryMind chatbot for a specific user.
-
-### Widget File Location
-```
-querymind/widget/chat_widget.html
-```
-
-### Configuration
-
-In the widget's script block, set:
+### 2. Configure the Integration
+Open the widget file and update the configuration block:
 
 ```javascript
-const API_URL = "https://your-deployed-api.com";  // Your backend URL
-const USER_ID = 2;                                  // The user's ID
+const API_URL = "https://your-api-domain.com"; // Your deployed backend URL
+const USER_ID = 1;                             // Your unique Vendor/Admin ID
 ```
 
-### Embedding
+### 3. Embed in Your App
+Paste the widget markup and script into your host application's footer. 
 
-Copy the HTML/CSS/JS from `chat_widget.html` into your app's HTML footer. The widget will:
-1. Show a chat icon in the bottom-right corner
-2. Target the specific knowledge base of the configured `USER_ID`
-3. Answer questions using only that user's data (their DB + uploaded files)
-
-### Testing Multi-Tenant Isolation
-
-To verify that two users see only their own data:
-1. Embed the widget with `USER_ID = 1` on Page A
-2. Embed the widget with `USER_ID = 2` on Page B
-3. Ask the same data question on both pages — answers should differ based on each user's configured data
+> [!TIP]
+> **Multi-App Isolation**: If you have multiple clients (e.g., App A and App B), register each as a new user via the API (`POST /admin/register`). Use their specific `user_id` in their respective widget configurations. QueryMind will automatically isolate their chat history and knowledge base.
 
 ---
 
-## 🔧 Environment Variables Reference
+## 📋 API Reference Summary
 
-| Variable | Required | Description |
-|---|---|---|
-| `LLM_PROVIDER` | ✅ | `ollama`, `openai`, `anthropic`, `gemini`, or `groq` |
-| `JWT_SECRET_KEY` | ✅ | Long random string for signing JWT tokens |
-| `FERNET_KEY` | ✅ | Base64-encoded securely generated key for database URL encryption |
-| `JWT_EXPIRE_MINUTES` | — | Token lifetime in minutes (default: 1440 = 24h) |
-| `OPENAI_API_KEY` | If using OpenAI | Your OpenAI API key |
-| `ANTHROPIC_API_KEY` | If using Anthropic | Your Anthropic API key |
-| `GEMINI_API_KEY` | If using Gemini | Your Gemini API key |
-| `GROQ_API_KEY` | If using Groq | Your Groq API key |
-| `OLLAMA_BASE_URL` | If using Ollama | Default: `http://localhost:11434` |
-| `CHROMA_PERSIST_DIR` | — | Where ChromaDB stores data (default: `./chroma_db`) |
-| `UPLOAD_DIR` | — | Where uploaded files are saved (default: `./uploads`) |
-| `ADMIN_USERNAME` | — | Shown in `.env.example` only — register via API |
-| `ADMIN_PASSWORD` | — | Shown in `.env.example` only — register via API |
+| Endpoint | Method | Auth | Usage |
+|---|---|---|---|
+| `/admin/token` | `POST` | None | Login to get JWT access token |
+| `/admin/register` | `POST` | None | Register a new vendor/user (Multi-Tenant) |
+| `/chat` | `POST` | None | Main chat endpoint (Requires `user_id`) |
+| `/admin/db-config` | `POST` | JWT | Connect a database to the AI |
+| `/admin/upload` | `POST` | JWT | Add documents to the Knowledge Base |
+| `/sessions` | `GET` | JWT | Retrieve chat history for the user |
 
 ---
 
-## 📋 Complete API Reference
+## 🛠️ Scaling for Production
 
-### Authentication
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/admin/register` | None | Register a new user |
-| `POST` | `/admin/token` | None | Login → get JWT |
-
-### Dashboard
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/admin/stats` | JWT | Get system stats (files, tables, LLM) |
-
-### LLM Configuration
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/admin/llm-config` | JWT | View current LLM provider |
-| `POST` | `/admin/llm-config` | JWT | Switch provider (ollama / openai / anthropic / gemini / groq) |
-
-### Database Configuration
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/admin/db-config` | JWT | View current DB connection |
-| `POST` | `/admin/db-config` | JWT | Connect a database |
-| `DELETE` | `/admin/db-config` | JWT | Disconnect the database |
-
-### Knowledge Base
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/admin/files` | JWT | List all uploaded/indexed files |
-| `POST` | `/admin/upload` | JWT | Upload and index a file |
-| `DELETE` | `/admin/files/{filename}` | JWT | Delete a file from knowledge store |
-
-### Chat & Sessions
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/chat` | None* | Send a message, get an AI answer |
-| `GET` | `/sessions` | JWT | Get all chat sessions for user |
-| `POST` | `/sessions` | JWT | Create a new session |
-| `GET` | `/sessions/{id}` | JWT | Get chat history for specific session |
-| `DELETE` | `/sessions/{id}` | JWT | Delete a session |
-| `PATCH` | `/sessions/{id}` | JWT | Update the title of a session |
-
-> *The `/chat` and `/sessions` endpoints use `user_id` internally. The React Admin panel dynamically fetches these.
+For high-traffic deployments:
+- **Metadata**: Switch from SQLite to **Postgres** for better concurrency.
+- **Files**: Ensure the `uploads/` and `chroma_db/` volumes are backed up regularly.
+- **LLM**: Use a cloud provider (OpenAI/Gemini) or a high-performance local Ollama server on a dedicated GPU node.
