@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change_this"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
-    fernet_key: str = "EUnxK17YIzJNolks8lKU3Lx_XZlZ-LthG026S_avWSY="
+    fernet_key: str = ""
 
     # ── ChromaDB ──────────────────────────────────────────────────────────
     chroma_persist_dir: str = "./chroma_db"
