@@ -24,8 +24,8 @@ def test_admin_token_flow():
 def test_chat_generates_response(mocker):
     # Mock LLM and intent evaluation to ensure fast execution without API costs
     mocker.patch('routers.chat.classify_intent', return_value='general')
-    mocker.patch('routers.chat.save_turn')
-    mocker.patch('routers.chat.get_relevant_history', return_value="")
+    mocker.patch('sqlalchemy.orm.Session.add')
+    mocker.patch('sqlalchemy.orm.Session.commit')
     
     mock_llm = mocker.MagicMock()
     mock_llm.invoke.return_value.content = "Mocked LLM reply"

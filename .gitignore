@@ -27,6 +27,7 @@ htmlcov/
 
 # Environments
 .env
+.env.*
 .venv
 venv/
 ENV/
@@ -36,11 +37,23 @@ ENV/
 *.sqlite
 *.sqlite3
 *.sqlite-journal
+tests/test.db
 backend/chroma_db/
 backend/uploads/
+querymind_metadata.db
 
 # Alembic
 backend/alembic/__pycache__/
+
+# Node.js / React Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # OS and Editors
 .DS_Store
@@ -48,5 +61,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Common for this project
+# Custom Logs & Outputs
 *.log
+backend/pytest_errors.txt
+backend/pytest_errors_utf8.txt

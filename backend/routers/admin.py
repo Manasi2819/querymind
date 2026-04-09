@@ -6,7 +6,8 @@ from pathlib import Path
 from auth import create_access_token, verify_token, verify_password, get_password_hash
 from models.schemas import DBConfig, LLMConfig, TokenResponse, UserRegistration
 from models.db_models import AdminUser, AdminSettings, UploadedFile
-from services.sql_agent import test_connection
+from services.database_connection import test_connection
+from services.encryption import encrypt_db_url, decrypt_db_url
 from config import get_settings
 from database import get_db
 
@@ -49,6 +50,10 @@ async def save_db_config(config: DBConfig, fetch_schema: bool = True, token_data
     from services.sql_metadata_service import index_db_metadata
     
     user_id = token_data.get("user_id")
+    
+    if config.url:
+        config.db_type = DBConfig.detect_db_type(config.url)
+        
     result = test_connection(config.connection_url)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -59,7 +64,10 @@ async def save_db_config(config: DBConfig, fetch_schema: bool = True, token_data
         db.add(admin_settings)
     
     db_data = config.model_dump()
-    db_data["url"] = config.connection_url
+    db_data["url"] = encrypt_db_url(config.connection_url)
+    if db_data.get("password"):
+        db_data["password"] = encrypt_db_url(db_data["password"])
+        
     admin_settings.db_config = db_data
     db.commit()
     
@@ -91,9 +99,11 @@ async def get_stats(token_data: dict = Depends(verify_token), db: Session = Depe
     admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
     table_count = 0
     if admin_settings and admin_settings.db_config:
-        url = admin_settings.db_config.get("url")
-        res = test_connection(url)
-        table_count = len(res.get("tables", []))
+        enc_url = admin_settings.db_config.get("url")
+        if enc_url:
+            url = decrypt_db_url(enc_url)
+            res = test_connection(url)
+            table_count = len(res.get("tables", []))
     
     return {
         "files": file_count,
@@ -147,8 +157,16 @@ async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_t
     if not admin_settings:
         admin_settings = AdminSettings(user_id=user_id)
         db.add(admin_settings)
+        admin_settings.llm_config = {}
         
-    admin_settings.llm_config = config.model_dump(exclude_none=True)
+    incoming_cfg = config.model_dump(exclude_none=True)
+    if "api_key" in incoming_cfg and incoming_cfg["api_key"]:
+        incoming_cfg["api_key"] = encrypt_db_url(incoming_cfg["api_key"])
+        
+    # Create a new dictionary to ensure SQLAlchemy detects the change
+    current_cfg = dict(admin_settings.llm_config) if admin_settings.llm_config else {}
+    current_cfg.update(incoming_cfg)
+    admin_settings.llm_config = current_cfg
     db.commit()
     return {"message": "LLM provider updated", "provider": admin_settings.llm_config.get("provider")}
 
@@ -188,7 +206,14 @@ async def upload_file(
 def get_db_url(db_session: Session = None, user_id: int = 1) -> str:
     if not db_session: return ""
     settings = db_session.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
-    return settings.db_config.get("url", "") if settings and settings.db_config else ""
+    if settings and settings.db_config:
+        enc_url = settings.db_config.get("url", "")
+        if enc_url:
+            try:
+                return decrypt_db_url(enc_url)
+            except Exception:
+                return enc_url # backward-compatible fallback if previously plain text
+    return ""
 
 def get_db_type(db_session: Session = None, user_id: int = 1) -> str:
     if not db_session: return "mysql"
@@ -198,4 +223,13 @@ def get_db_type(db_session: Session = None, user_id: int = 1) -> str:
 def get_llm_cfg(db_session: Session = None, user_id: int = 1) -> dict:
     if not db_session: return {"provider": settings.llm_provider}
     as_ = db_session.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
-    return as_.llm_config if as_ and as_.llm_config else {"provider": settings.llm_provider}
+    cfg = as_.llm_config.copy() if as_ and as_.llm_config else {"provider": settings.llm_provider}
+    
+    # Decrypt API key safely, with plain-text fallback for backward compatibility
+    if "api_key" in cfg and cfg["api_key"]:
+        try:
+            cfg["api_key"] = decrypt_db_url(cfg["api_key"])
+        except Exception:
+            pass
+            
+    return cfg

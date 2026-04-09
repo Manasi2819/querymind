@@ -40,6 +40,22 @@ def get_llm(provider: str = None, api_key: str = None, model: str = None) -> Bas
             temperature=0.1,
         )
 
+    elif provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            api_key=api_key or settings.gemini_api_key,
+            model=model or settings.gemini_model,
+            temperature=0.1,
+        )
+
+    elif provider == "groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            api_key=api_key or settings.groq_api_key,
+            model_name=model or settings.groq_model,
+            temperature=0.1,
+        )
+
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from routers import chat, admin, ingest
+from contextlib import asynccontextmanager
+from routers import chat, admin, ingest, sessions
 from sqlalchemy.orm import Session
 from database import SessionLocal, Base, engine
 from models.db_models import AdminUser
@@ -10,14 +11,8 @@ import os
 
 settings = get_settings()
 
-app = FastAPI(
-    title="QueryMind API",
-    description="Enterprise chatbot platform — plug into any application",
-    version="1.0.0",
-)
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     # Create tables
     Base.metadata.create_all(bind=engine)
     
@@ -35,6 +30,14 @@ def startup_event():
             db.commit()
     finally:
         db.close()
+    yield
+
+app = FastAPI(
+    title="QueryMind API",
+    description="Enterprise chatbot platform — plug into any application",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +50,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(ingest.router)
+app.include_router(sessions.router)
 
 from fastapi.staticfiles import StaticFiles
 script_dir = os.path.dirname(__file__)

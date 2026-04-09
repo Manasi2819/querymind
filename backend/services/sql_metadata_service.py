@@ -18,7 +18,8 @@ def fetch_db_schema(connection_url: str) -> list:
     Uses SQLAlchemy's inspector to fetch table and column metadata.
     Returns a list of dicts: [{'table': '...', 'columns': '...', 'description': '...'}]
     """
-    engine = create_engine(connection_url)
+    from services.database_connection import connect_db
+    engine = connect_db(connection_url)
     inspector = inspect(engine)
     
     schema_metadata = []

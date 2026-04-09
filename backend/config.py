@@ -1,9 +1,10 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+
 class Settings(BaseSettings):
-    # LLM
-    llm_provider: str = "ollama"           # "ollama" | "openai" | "anthropic"
+    # ── LLM ───────────────────────────────────────────────────────────────
+    llm_provider: str = "ollama"           # "ollama" | "openai" | "anthropic" | "gemini" | "groq"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "phi3:mini"
     ollama_embed_model: str = "nomic-embed-text"
@@ -11,41 +12,39 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-haiku-20240307"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-1.5-flash"
+    groq_api_key: str = ""
+    groq_model: str = "llama3-8b-8192"
 
-    # Database
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_db: str = "querymind"
-    postgres_user: str = "querymind_user"
-    postgres_password: str = "changeme"
+    # ── Database (single URL — database-agnostic) ─────────────────────────
+    # Supports SQLite | MySQL | PostgreSQL via DATABASE_URL.
+    # The backend auto-creates the target database on startup.
+    # Override via DATABASE_URL environment variable or .env file.
+    database_url: str = "sqlite:///./querymind_metadata.db"
 
-    # Redis
+    # ── Redis ─────────────────────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
 
-    # Auth
+    # ── Auth ──────────────────────────────────────────────────────────────
     jwt_secret_key: str = "change_this"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
+    fernet_key: str = "EUnxK17YIzJNolks8lKU3Lx_XZlZ-LthG026S_avWSY="
 
-    # ChromaDB
+    # ── ChromaDB ──────────────────────────────────────────────────────────
     chroma_persist_dir: str = "./chroma_db"
 
-    # Files
+    # ── File uploads ──────────────────────────────────────────────────────
     upload_dir: str = "./uploads"
 
-    # Admin
+    # ── Admin credentials ─────────────────────────────────────────────────
     admin_username: str = "admin"
     admin_password: str = "admin123"
 
     class Config:
         env_file = (".env", "../.env")
 
-    @property
-    def postgres_url(self) -> str:
-        return (
-            f"postgresql://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
 
 @lru_cache
 def get_settings() -> Settings:

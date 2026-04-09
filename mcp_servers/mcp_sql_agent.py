@@ -10,8 +10,8 @@ from mcp.server.stdio import stdio_server
 from mcp import types
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../backend"))
-from services.sql_agent import run_sql_query
-from routers.admin import get_db_url
+from services.sql_rag_service import run_sql_rag_pipeline
+from routers.admin import get_db_config
 
 app = Server("querymind-sql-agent")
 
@@ -34,11 +34,23 @@ async def list_tools() -> list[types.Tool]:
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     if name == "sql_query":
-        db_url = get_db_url()
+        # MCP uses default user_1 tenant for global tool mode
+        config = get_db_config(user_id=1)
+        db_url = config.get("url")
+        db_type = config.get("type", "mysql")
+        
         if not db_url:
-            return [types.TextContent(type="text", text="No database configured.")]
-        result = run_sql_query(arguments["question"], db_url)
-        return [types.TextContent(type="text", text=result)]
+            return [types.TextContent(type="text", text="No database configured in QueryMind. Please connect a DB in the admin panel.")]
+        
+        summary, sql, data = run_sql_rag_pipeline(
+            question=arguments["question"],
+            tenant_id="user_1",
+            db_url=db_url,
+            db_type=db_type
+        )
+        
+        response_text = f"SUMMARY: {summary}\n\nSQL USED:\n```sql\n{sql}\n```\n\nDATA: {data}"
+        return [types.TextContent(type="text", text=response_text)]
     raise ValueError(f"Unknown tool: {name}")
 
 async def main():

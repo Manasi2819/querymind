@@ -1,84 +1,188 @@
 # How to Upload QueryMind to GitHub
 
-Follow these steps to upload your project to a new GitHub repository properly.
+Follow these steps to push the full QueryMind project (backend + React frontend) to GitHub.
+
+---
 
 ## Prerequisites
-- A [GitHub account](https://github.com/).
-- [Git installed](https://git-scm.com/) on your local machine.
-- Your project files are organized and ready.
 
-## Step 1: Initialize Git
-If you haven't already initialized your project, open your terminal (PowerShell or Git Bash) from the project directory (`c:\Users\Admin\Documents\chatbot1\querymind`) and run:
+- A [GitHub account](https://github.com/)
+- [Git installed](https://git-scm.com/) on your machine
+- Node.js 18+ installed (for the React frontend)
 
-```bash
-# Initialize a new Git repository
+---
+
+## Step 1 — Verify .gitignore is Correct
+
+The `.gitignore` already excludes sensitive and auto-generated files:
+
+```
+venv/
+.venv/
+node_modules/         ← frontend dependencies (large, auto-installed)
+.env                  ← contains API keys and secrets — NEVER commit this
+__pycache__/
+*.db
+chroma_db/
+uploads/
+frontend/dist/        ← production build output
+```
+
+> **IMPORTANT**: Never commit your `.env` file. It contains API keys and JWT secrets.
+
+---
+
+## Step 2 — Initialize Git (if not already done)
+
+```powershell
+# From the querymind/ root folder
 git init
 ```
 
-## Step 2: Configure .gitignore
-We have already created a `.gitignore` file for you, which includes:
-- Virtual environments (`venv/`, `.venv/`)
-- Environment variables (`.env`)
-- Python cache (`__pycache__/`)
-- Database files (`*.db`, `chroma_db/`)
-- Temporary uploads (`uploads/`)
+---
 
-**IMPORTANT**: Never push your `.env` file to GitHub as it contains sensitive API keys and database credentials.
+## Step 3 — Configure Your Git Identity (first time only)
 
-## Step 3: Add Files to Staging
-Add all your project files to the Git staging area:
-
-```bash
-# Add all files (excluding those in .gitignore)
-git add .
+```powershell
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
 ```
 
-To verify which files are being added, you can run:
-```bash
-# Check the status of your staged files
+---
+
+## Step 4 — Stage All Files
+
+```powershell
+# Add all tracked files (gitignore will exclude venv, node_modules, .env, etc.)
+git add .
+
+# Verify what is staged — check that .env and venv/ are NOT listed
 git status
 ```
 
-## Step 4: Create Initial Commit
-Commit your files with a descriptive message:
+---
 
-```bash
-# Commit the staged files
-git commit -m "Initial commit: QueryMind Chatbot Platform"
+## Step 5 — Create Initial Commit
+
+```powershell
+git commit -m "Initial commit: QueryMind with React frontend"
 ```
 
-## Step 5: Create a Repository on GitHub
-1. Go to [github.com/new](https://github.com/new).
-2. Enter a name for your repository (e.g., `querymind-chatbot`).
-3. Choose **Public** or **Private**.
-4. **Do NOT** initialize with a README, .gitignore, or License (since we already have them).
-5. Click **Create repository**.
+---
 
-## Step 6: Link Local Repo to GitHub
-Copy the remote repository URL from GitHub (e.g., `https://github.com/yourusername/querymind-chatbot.git`) and run:
+## Step 6 — Create a Repository on GitHub
 
-```bash
-# Add the remote repository address
+1. Go to [github.com/new](https://github.com/new)
+2. Enter a repository name, e.g. `querymind-chatbot`
+3. Choose **Public** or **Private**
+4. **Do NOT** check "Initialize with README", `.gitignore`, or License
+5. Click **Create repository**
+
+---
+
+## Step 7 — Link to GitHub and Push
+
+```powershell
+# Replace with your actual GitHub username and repo name
 git remote add origin https://github.com/yourusername/querymind-chatbot.git
 
-# Set the main branch (standard)
+# Set main as default branch
 git branch -M main
-```
 
-## Step 7: Push to GitHub
-Finally, push your code to the remote repository:
-
-```bash
-# Push the local 'main' branch to 'origin'
+# Push to GitHub
 git push -u origin main
 ```
 
 ---
 
-### Troubleshooting
-- **Permission Denied**: Ensure you are logged into Git on your machine. You may need to run `git config --global user.name "Your Name"` and `git config --global user.email "your@email.com"`.
-- **Large Files**: If you have very large files, consider using [Git LFS](https://git-lfs.github.com/).
-- **Updating Code**: To push new changes in the future, just run:
-  1. `git add .`
-  2. `git commit -m "Your update message"`
-  3. `git push`
+## Step 8 — Add README Badge (optional)
+
+After pushing, your README.md will automatically render on GitHub. You can add status badges at the top:
+
+```markdown
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
+![React](https://img.shields.io/badge/React-18-61DAFB)
+![Vite](https://img.shields.io/badge/Vite-5-purple)
+```
+
+---
+
+## What Gets Pushed vs. What Stays Local
+
+| Path | Pushed? | Why |
+|---|---|---|
+| `backend/` | ✅ Yes | Core API code |
+| `frontend/src/` | ✅ Yes | React source code |
+| `frontend/package.json` | ✅ Yes | Dependency manifest |
+| `frontend/node_modules/` | ❌ No | Auto-installed via `npm install` |
+| `frontend/dist/` | ❌ No | Build output, regenerated |
+| `widget/` | ✅ Yes | Embeddable chat widget |
+| `.env` | ❌ No | Contains secrets |
+| `.env.example` | ✅ Yes | Template for others |
+| `venv/` | ❌ No | Python env, large |
+| `chroma_db/` | ❌ No | Local vector DB data |
+| `*.db` files | ❌ No | Local database files |
+
+---
+
+## When Someone Clones the Repository
+
+They follow these steps to get started:
+
+```powershell
+# 1. Clone
+git clone https://github.com/yourusername/querymind-chatbot.git
+cd querymind-chatbot
+
+# 2. Copy and configure environment
+copy .env.example .env
+# (Edit .env with your keys)
+
+# 3. Set up Python environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1      # Windows
+# OR: source venv/bin/activate   # Mac/Linux
+cd backend
+pip install -r requirements.txt
+cd ..
+
+# 4. Start the backend
+cd backend
+uvicorn main:app --reload --port 8000
+
+# 5. (New terminal) register admin user — first time only
+Invoke-RestMethod -Uri "http://localhost:8000/admin/register" `
+  -Method POST -ContentType "application/json" `
+  -Body '{"username": "admin", "password": "admin123"}'
+
+# 6. (New terminal) Start the React frontend
+cd frontend
+npm install
+npm run dev
+
+# 7. Open in browser
+# http://localhost:5173  → React Admin Panel
+# http://localhost:8000/docs → API Docs
+```
+
+---
+
+## Pushing Future Updates
+
+```powershell
+git add .
+git commit -m "Description of your changes"
+git push
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Fix |
+|---|---|
+| `Permission denied (publickey)` | Use HTTPS URL instead of SSH, or add SSH key to GitHub |
+| `node_modules` is being staged | Make sure `frontend/node_modules/` is in `.gitignore` |
+| `.env` showing in `git status` | Add `.env` to `.gitignore` and run `git rm --cached .env` |
+| `git push` rejected | Run `git pull --rebase origin main` first |
