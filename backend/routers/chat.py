@@ -55,8 +55,16 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"[{m.role}] {m.content}" for m in recent_history
         ) + "\n"
 
-    # Classify intent
-    intent = classify_intent(question, has_db, has_docs)
+    # Classify intent using LLM or fallback
+    intent = classify_intent(
+        question, 
+        has_db, 
+        has_docs, 
+        provider=provider, 
+        api_key=api_key, 
+        model=selected_model, 
+        history=history_str
+    )
 
     def _save_turn_db(role: str, content: str, sql: str = None, data: list = None, source: str = None):
         msg = models.ChatMessage(
