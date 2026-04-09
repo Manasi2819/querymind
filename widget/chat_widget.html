@@ -80,7 +80,9 @@
 </div>
 
 <script>
-  const API_URL = "http://localhost:8000";    // Change to your deployed URL
+  // Set to your deployed QueryMind API URL (e.g., "https://api.yourdomain.com")
+  // If hosted on the same server/port, you can leave it empty or use window.location.origin
+  const API_URL = ""; 
   const USER_ID = 1;                          // Replace with your unique Vendor ID
   const sessionId = Math.random().toString(36).slice(2);
   let panelOpen = false;

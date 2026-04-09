@@ -32,12 +32,25 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg2://querymind_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/querymind
       - CHROMA_PERSIST_DIR=/app/chroma_db
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       - postgres
       - chromadb
+      - ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./uploads:/app/uploads
       - ./chroma_db:/app/chroma_db
+
+  # Local AI Engine (CPU Mode)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: querymind-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
 
   # Frontend Admin Panel (Vite + React)
   frontend:
@@ -47,10 +60,11 @@ services:
     ports:
       - "80:80"
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=/
     depends_on:
       - backend
 
 volumes:
   postgres_data:
   chroma_data:
+  ollama_data:

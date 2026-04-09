@@ -58,9 +58,23 @@ docker-compose up -d --build
 **Access Points:**
 - **Admin Dashboard**: http://localhost (Port 80)
 - **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+- **Ollama Engine**: http://localhost:11434
 
-### Option B — Manual Deployment
+### Option B — Using Local LLMs (Ollama)
+
+If you chose to run AI locally using the included Ollama service, you must download the models after the containers are started:
+
+```powershell
+# Pull the chat model
+docker exec -it querymind-ollama ollama pull phi3:mini
+
+# Pull the embedding model (required for Knowledge Base)
+docker exec -it querymind-ollama ollama pull nomic-embed-text
+```
+
+---
+
+### Option C — Manual Deployment
 
 1. **Backend**:
    ```powershell
