@@ -127,8 +127,20 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
     except Exception as e:
         import traceback
+        error_msg = str(e)
         print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # User-friendly hints for common LLM errors
+        if "not found" in error_msg.lower() and "model" in error_msg.lower():
+            friendly_detail = f"LLM Error: The model '{selected_model}' was not found by {provider}. Please check your configuration or pull the model if using Ollama."
+        elif "api_key" in error_msg.lower() or "authentication" in error_msg.lower():
+            friendly_detail = f"LLM Error: Authentication failed for {provider}. Please check your API key."
+        elif "ImportError" in error_msg or "requires" in error_msg:
+            friendly_detail = f"System Error: {error_msg}"
+        else:
+            friendly_detail = error_msg
+
+        raise HTTPException(status_code=500, detail=friendly_detail)
 
 @router.get("/health")
 async def health():

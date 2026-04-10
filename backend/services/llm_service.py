@@ -17,44 +17,59 @@ def get_llm(provider: str = None, api_key: str = None, model: str = None) -> Bas
     provider = provider or settings.llm_provider
 
     if provider == "ollama":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(
-            base_url=settings.ollama_base_url,
-            model=model or settings.ollama_model,
-            temperature=0.1,
-        )
+        try:
+            from langchain_ollama import ChatOllama
+            return ChatOllama(
+                base_url=settings.ollama_base_url,
+                model=model or settings.ollama_model,
+                temperature=0.1,
+            )
+        except ImportError:
+            raise ImportError("Ollama provider requires 'langchain-ollama' package. Run: pip install langchain-ollama")
 
     elif provider == "openai":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            api_key=api_key or settings.openai_api_key,
-            model=model or settings.openai_model,
-            temperature=0.1,
-        )
+        try:
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                api_key=api_key or settings.openai_api_key,
+                model=model or settings.openai_model,
+                temperature=0.1,
+            )
+        except ImportError:
+            raise ImportError("OpenAI provider requires 'langchain-openai' package. Run: pip install langchain-openai")
 
     elif provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
-            api_key=api_key or settings.anthropic_api_key,
-            model_name=model or settings.anthropic_model,
-            temperature=0.1,
-        )
+        try:
+            from langchain_anthropic import ChatAnthropic
+            return ChatAnthropic(
+                api_key=api_key or settings.anthropic_api_key,
+                model_name=model or settings.anthropic_model,
+                temperature=0.1,
+            )
+        except ImportError:
+            raise ImportError("Anthropic provider requires 'langchain-anthropic' package. Run: pip install langchain-anthropic")
 
     elif provider == "gemini":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            api_key=api_key or settings.gemini_api_key,
-            model=model or settings.gemini_model,
-            temperature=0.1,
-        )
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            return ChatGoogleGenerativeAI(
+                api_key=api_key or settings.gemini_api_key,
+                model=model or settings.gemini_model,
+                temperature=0.1,
+            )
+        except ImportError:
+            raise ImportError("Gemini provider requires 'langchain-google-genai' package. Run: pip install langchain-google-genai")
 
     elif provider == "groq":
-        from langchain_groq import ChatGroq
-        return ChatGroq(
-            api_key=api_key or settings.groq_api_key,
-            model_name=model or settings.groq_model,
-            temperature=0.1,
-        )
+        try:
+            from langchain_groq import ChatGroq
+            return ChatGroq(
+                api_key=api_key or settings.groq_api_key,
+                model_name=model or settings.groq_model,
+                temperature=0.1,
+            )
+        except ImportError:
+            raise ImportError("Groq provider requires 'langchain-groq' package. Run: pip install langchain-groq")
 
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
