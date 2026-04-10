@@ -79,7 +79,14 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.commit()
 
     try:
-        if intent == "sql":
+        if intent == "unauthorized":
+            answer = "I cannot do that action, I can only fetch data and show it."
+            source = "system"
+            _save_turn_db("user", question)
+            _save_turn_db("assistant", answer, None, None, source)
+            return ChatResponse(answer=answer, source=source, session_id=session_id)
+
+        elif intent == "sql":
             from services.sql_rag_service import run_sql_rag_pipeline
             
             answer, sql, data = run_sql_rag_pipeline(

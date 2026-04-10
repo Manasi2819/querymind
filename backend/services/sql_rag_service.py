@@ -8,6 +8,13 @@ from sqlalchemy import create_engine, text
 import chromadb
 from config import get_settings
 from services.llm_service import get_llm, get_embed_model
+import re
+
+# SQL Guardrails: Keywords that are forbidden to prevent data modification or schema changes.
+FORBIDDEN_SQL_KEYWORDS = [
+    "UPDATE", "DELETE", "INSERT", "DROP", "ALTER", "TRUNCATE", 
+    "CREATE", "REPLACE", "GRANT", "REVOKE", "EXEC", "EXECUTE"
+]
 
 settings = get_settings()
 
@@ -93,6 +100,7 @@ Given the following database schema context, generate a valid {engine_type} SQL 
 - Return ONLY the raw SQL code. No explanation, no markdowns, no preamble.
 - If the question cannot be answered with the current schema, return "ERROR: Schema insufficient".
 - Ensure the query is read-only (SELECT only).
+- If the user is asking to modify, delete, insert, or change data/schema, do not generate a SELECT to 'show' it; instead, return "ERROR: Forbidden action".
 
 ### USER QUESTION:
 {question}
@@ -131,6 +139,7 @@ The previous SQL query you generated failed with an error. Please fix it.
 - Use only the tables and columns provided in the context.
 - Return ONLY the corrected raw SQL code. No explanation, no markdowns, no preamble.
 - Ensure the query is read-only (SELECT only).
+- If the user is asking to modify, delete, insert, or change data/schema, do not generate a SELECT to 'show' it; instead, return "ERROR: Forbidden action".
 - Fix the error mentioned in the error message (e.g., syntax, column names, or group by issues).
 
 ### CORRECTED SQL QUERY:"""
@@ -140,11 +149,26 @@ The previous SQL query you generated failed with an error. Please fix it.
     sql_text = sql_text.replace("```sql", "").replace("```", "").strip()
     return sql_text
 
+def validate_sql(sql: str):
+    """
+    Checks if the SQL query contains any forbidden modification keywords.
+    Raises an Exception if a forbidden keyword is found.
+    """
+    sql_upper = sql.upper()
+    for keyword in FORBIDDEN_SQL_KEYWORDS:
+        # Use regex to find the keyword as a whole word to avoid false positives (e.g., 'updated_at' column)
+        pattern = rf"\b{keyword}\b"
+        if re.search(pattern, sql_upper):
+            raise Exception(f"Security Alert: Forbidden SQL keyword '{keyword}' detected. Only SELECT queries are allowed.")
+
 def execute_query(sql: str, connection_url: str) -> tuple:
     """
     Executes the generated SQL and returns a list of dicts and the SQL used.
     Returns: (sql_used, list_of_dicts, dataframe_or_none)
     """
+    # 1. Apply hard guardrails before execution
+    validate_sql(sql)
+    
     from services.database_connection import connect_db
     engine = connect_db(connection_url)
     try:
@@ -172,6 +196,8 @@ def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: st
     
     # Handle initial "Schema insufficient"
     if sql.startswith("ERROR"):
+        if "Forbidden action" in sql:
+             return "I cannot do that action, I can only fetch data and show it.", None, None
         # USER REQUEST: Try once more by retrieving expanded schema
         schema_context = retrieve_relevant_schema(rewritten_question, tenant_id, k=10)
         sql = generate_sql(rewritten_question, schema_context, engine_type=db_type, llm_provider=llm_provider, api_key=api_key, model=model)

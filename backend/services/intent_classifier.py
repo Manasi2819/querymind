@@ -15,6 +15,10 @@ DOC_KEYWORDS = [
     "describe", "what is", "how is defined",
 ]
 
+FORBIDDEN_INTENT_KEYWORDS = [
+    "delete", "drop", "truncate", "update", "insert", "alter", "create", "modify", "remove", "change", "set", "clear"
+]
+
 def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str = None, api_key: str = None, model: str = None, history: str = "") -> str:
     """
     Returns: 'sql' | 'rag' | 'general'
@@ -27,9 +31,10 @@ def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str =
             
             prompt = f"""You are an intent classifier for a database querying assistant.
 You must classify the user's latest question into one of three categories:
-1. 'sql' - The user is asking for data, metrics, counts, names, IDs, prices, numbers, or records that would typically be found in a structured SQL database. (e.g. "what is the name of the first user", "what is the rate", "how many contracts", "which route has the highest rate", "update the rate")
+1. 'sql' - The user is asking for data, metrics, counts, names, IDs, prices, numbers, or records that would typically be found in a structured SQL database. (e.g. "what is the name of the first user", "what is the rate", "how many contracts", "which route has the highest rate")
 2. 'rag' - The user is asking about the definition, meaning, or documentation of technical/domain-specific terms. (e.g. "what is the meaning of X", "explain how the system works", "according to the document")
-3. 'general' - General greetings, small talk, coding questions, math, or general knowledge completely unrelated to the enterprise database/documents. (e.g. "what is 1+1", "who is the president", "what is llm", "what is python", "hello")
+3. 'unauthorized' - The user is asking to modify, delete, insert, update, drop, or change any data or database structure. (e.g. "delete record X", "drop the table", "update price to 50", "change name to Y", "remove all logs")
+4. 'general' - General greetings, small talk, coding questions, math, or general knowledge completely unrelated to the enterprise database/documents. (e.g. "what is 1+1", "who is the president", "what is llm", "what is python", "hello")
 
 Context:
 - Database configured: {has_db}
@@ -47,7 +52,7 @@ Instructions:
             classification = response.content.strip().lower()
             
             # Extract just the classification keyword
-            for valid_category in ['sql', 'rag', 'general']:
+            for valid_category in ['sql', 'rag', 'unauthorized', 'general']:
                 if valid_category in classification:
                     # Sanity check against missing infrastructure
                     if valid_category == 'sql' and not has_db:
@@ -61,6 +66,9 @@ Instructions:
 
     # Keyword fallback
     q = question.lower()
+    
+    if has_db and any(kw in q for kw in FORBIDDEN_INTENT_KEYWORDS):
+        return "unauthorized"
 
     if has_db and any(kw in q for kw in SQL_KEYWORDS):
         return "sql"
