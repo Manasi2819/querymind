@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+chroma_db/
+uploads/
+*.db
+test.db
+pytest_errors.txt
+pytest_errors_utf8.txt
