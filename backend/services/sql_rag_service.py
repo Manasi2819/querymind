@@ -21,39 +21,49 @@ settings = get_settings()
 def get_chroma_client():
     return chromadb.PersistentClient(path=settings.chroma_persist_dir)
 
-def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 3) -> str:
+def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 5) -> str:
     """
     Search ChromaDB for the most relevant table/column metadata chunks.
-    Prioritizes auto-indexed metadata, but also checks the "Knowledge Base"
-    for user-provided schema context (DASHBOARD feature).
+    This specifically targets the auto-indexed SQL metadata.
     """
     client = get_chroma_client()
     embed_model = get_embed_model()
     query_embedding = embed_model.embed_query(query)
     
-    contexts = []
-    
-    # 1. Primary: Auto-indexed SQL Metadata
     try:
         col_sql = client.get_collection(name=f"{tenant_id}_sql_metadata")
         res_sql = col_sql.query(query_embeddings=[query_embedding], n_results=k)
         if res_sql and res_sql['documents'][0]:
-            contexts.extend(res_sql['documents'][0])
+            return "\n\n".join(res_sql['documents'][0])
     except:
         pass
 
-    # 2. Secondary: User-provided Knowledge Base (SQL, JSON, MD schema info)
-    try:
-        col_kb = client.get_collection(name=f"{tenant_id}_knowledge_base")
-        res_kb = col_kb.query(query_embeddings=[query_embedding], n_results=2)
-        if res_kb and res_kb['documents'][0]:
-            contexts.append("### EXTENDED USER KNOWLEDGE BASE CONTEXT:")
-            contexts.extend(res_kb['documents'][0])
-    except:
-        pass
+    return "No relevant database schema found."
+
+def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5) -> str:
+    """
+    Search ChromaDB for relevant business logic/documentation (JSON, CSV, SQL).
+    Targets the 'document' or 'knowledge_base' collection.
+    """
+    client = get_chroma_client()
+    embed_model = get_embed_model()
+    query_embedding = embed_model.embed_query(query)
     
+    # We check both possible collection names for backward compatibility
+    collections_to_check = [f"{tenant_id}_document", f"{tenant_id}_knowledge_base"]
+    contexts = []
+    
+    for coll_name in collections_to_check:
+        try:
+            col = client.get_collection(name=coll_name)
+            res = col.query(query_embeddings=[query_embedding], n_results=k)
+            if res and res['documents'][0]:
+                contexts.extend(res['documents'][0])
+        except:
+            pass
+            
     if not contexts:
-        return "No relevant metadata found. Please configure database or upload knowledge base files."
+        return "No relevant external knowledge found."
         
     return "\n\n".join(contexts)
 
@@ -83,36 +93,86 @@ def rewrite_query(question: str, history: str = "", llm_provider: str = None, ap
     rewritten = response.content.strip()
     return rewritten
 
-def generate_sql(question: str, schema_context: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
+def generate_sql_with_context(question: str, schema: str, knowledge: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
     """
-    Constructs the prompt and calls LLM to generate raw SQL.
+    Constructs the specialized 'context-aware' prompt for SQL generation.
     """
     llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
     
-    prompt = f"""You are a specialized SQL assistant.
-Given the following database schema context, generate a valid {engine_type} SQL query to answer the user's question.
+    prompt = f"""You are an expert SQL generator.
 
-### DATABASE SCHEMA CONTEXT:
-{schema_context}
+DATABASE SCHEMA:
+{schema}
 
-### INSTRUCTIONS:
-- Use only the tables and columns provided in the context.
-- Return ONLY the raw SQL code. No explanation, no markdowns, no preamble.
-- If the question cannot be answered with the current schema, return "ERROR: Schema insufficient".
-- Ensure the query is read-only (SELECT only).
-- If the user is asking to modify, delete, insert, or change data/schema, do not generate a SELECT to 'show' it; instead, return "ERROR: Forbidden action".
+EXTERNAL KNOWLEDGE:
+{knowledge}
 
-### USER QUESTION:
+USER QUESTION:
 {question}
+
+INSTRUCTIONS:
+- Use the DATABASE SCHEMA to understand table and column names.
+- Use the EXTERNAL KNOWLEDGE to understand business logic, mappings, or specific values.
+- Return ONLY the raw SQL code for {engine_type}. No explanation, no markdowns.
+- Ensure the query is read-only (SELECT only).
+- If the question cannot be answered, return "ERROR: Information insufficient".
+
+### SQL QUERY:"""
+    
+def _extract_sql(text: str) -> str:
+    """
+    Surgically extracts the SQL block from LLM output and removes preambles/commentary.
+    """
+    # 1. Look for markdown code block (most reliable)
+    match = re.search(r"```(?:sql)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # 2. No code block: Clean up typical chatty LLM preambles
+    sql = text.strip()
+    # Strip everything up to "here is the query", "corrected query", etc.
+    preamble_pattern = r"(?i)^.*?(?:here is (the )?query|i have corrected (the )?query|the query is|sql query)[:\s]*"
+    sql = re.sub(preamble_pattern, "", sql, count=1).strip()
+    
+    # 3. Strip post-explanation/notes
+    # Split on keywords like Note:, Explanation:, etc.
+    sql = re.split(r"(?i)\bnote:|\bexplanation:|\bthis query", sql)[0].strip()
+    
+    # Standardize semicolon
+    sql = sql.rstrip(";").strip()
+    if sql and not sql.upper().startswith("ERROR") and "SELECT" in sql.upper():
+        sql += ";"
+        
+    return sql
+
+
+def generate_sql_with_context(question: str, schema: str, knowledge: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
+    """
+    Constructs the specialized 'context-aware' prompt for SQL generation.
+    """
+    llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
+    
+    prompt = f"""You are an expert SQL generator.
+    
+DATABASE SCHEMA:
+{schema}
+
+EXTERNAL KNOWLEDGE:
+{knowledge}
+
+USER QUESTION:
+{question}
+
+INSTRUCTIONS:
+- Return ONLY the raw SQL code for {engine_type}. 
+- CRITICAL: Do NOT add notes, explanations, or preambles. No "Note:", no "Here is the query". Just the code.
+- Ensure the query is read-only (SELECT only).
+- If the question cannot be answered, return "ERROR: Information insufficient".
 
 ### SQL QUERY:"""
     
     response = llm.invoke(prompt)
-    sql_text = response.content.strip()
-    
-    # Clean markdown if LLM includes it
-    sql_text = sql_text.replace("```sql", "").replace("```", "").strip()
-    return sql_text
+    return _extract_sql(response.content)
 
 def generate_corrected_sql(question: str, schema_context: str, failed_sql: str, error_message: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
     """
@@ -136,27 +196,23 @@ The previous SQL query you generated failed with an error. Please fix it.
 {error_message}
 
 ### INSTRUCTIONS:
-- Use only the tables and columns provided in the context.
-- Return ONLY the corrected raw SQL code. No explanation, no markdowns, no preamble.
+- Return ONLY the corrected raw SQL code. 
+- CRITICAL: Do NOT add notes, explanations, or preambles. No "Note:", no "Here is the query". Just the code.
 - Ensure the query is read-only (SELECT only).
-- If the user is asking to modify, delete, insert, or change data/schema, do not generate a SELECT to 'show' it; instead, return "ERROR: Forbidden action".
-- Fix the error mentioned in the error message (e.g., syntax, column names, or group by issues).
+- If the user is asking to modify, delete, insert, or change data/schema, return "ERROR: Forbidden action".
+- Fix the error mentioned in the error message.
 
 ### CORRECTED SQL QUERY:"""
     
     response = llm.invoke(prompt)
-    sql_text = response.content.strip()
-    sql_text = sql_text.replace("```sql", "").replace("```", "").strip()
-    return sql_text
+    return _extract_sql(response.content)
 
 def validate_sql(sql: str):
     """
     Checks if the SQL query contains any forbidden modification keywords.
-    Raises an Exception if a forbidden keyword is found.
     """
     sql_upper = sql.upper()
     for keyword in FORBIDDEN_SQL_KEYWORDS:
-        # Use regex to find the keyword as a whole word to avoid false positives (e.g., 'updated_at' column)
         pattern = rf"\b{keyword}\b"
         if re.search(pattern, sql_upper):
             raise Exception(f"Security Alert: Forbidden SQL keyword '{keyword}' detected. Only SELECT queries are allowed.")
@@ -164,9 +220,8 @@ def validate_sql(sql: str):
 def execute_query(sql: str, connection_url: str) -> tuple:
     """
     Executes the generated SQL and returns a list of dicts and the SQL used.
-    Returns: (sql_used, list_of_dicts, dataframe_or_none)
     """
-    # 1. Apply hard guardrails before execution
+    import json
     validate_sql(sql)
     
     from services.database_connection import connect_db
@@ -174,37 +229,45 @@ def execute_query(sql: str, connection_url: str) -> tuple:
     try:
         with engine.connect() as conn:
             df = pd.read_sql(text(sql), conn)
-            # Standardize for JSON response
-            data = df.to_dict(orient="records")
+            # Standardize for JSON response (Converts Timestamps to strings and handles JSON-safety)
+            data = json.loads(df.to_json(orient="records", date_format="iso"))
             return sql, data, df
     except Exception as e:
         raise Exception(f"SQL execution failed: {str(e)}")
 
-def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, history: str = ""):
+
+def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, history: str = ""):
     """
-    The full high-level pipeline with retry logic for SQL correction.
-    Now includes query rewriting for context-awareness.
+    Enhanced pipeline:
+    1. Retrieve relevant DB schema
+    2. Retrieve knowledge from ChromaDB (Top K = 5)
+    3. Generate Context-Aware SQL
+    4. Execute with retry loop
     """
     # 0. Context check & rewrite
     rewritten_question = rewrite_query(question, history, llm_provider, api_key, model)
     
-    # 1. Retrieve (Initial)
-    schema_context = retrieve_relevant_schema(rewritten_question, tenant_id, k=3)
+    # 1 & 2. Retrieve context
+    schema = retrieve_relevant_schema(rewritten_question, tenant_id, k=6)
+    knowledge = retrieve_knowledge_base(rewritten_question, tenant_id, k=5)
     
-    # 2. Generate (Initial)
-    sql = generate_sql(rewritten_question, schema_context, engine_type=db_type, llm_provider=llm_provider, api_key=api_key, model=model)
+    # 3. Generate SQL
+    sql = generate_sql_with_context(
+        question=rewritten_question,
+        schema=schema,
+        knowledge=knowledge,
+        engine_type=db_type,
+        llm_provider=llm_provider,
+        api_key=api_key,
+        model=model
+    )
     
-    # Handle initial "Schema insufficient"
     if sql.startswith("ERROR"):
         if "Forbidden action" in sql:
              return "I cannot do that action, I can only fetch data and show it.", None, None
-        # USER REQUEST: Try once more by retrieving expanded schema
-        schema_context = retrieve_relevant_schema(rewritten_question, tenant_id, k=10)
-        sql = generate_sql(rewritten_question, schema_context, engine_type=db_type, llm_provider=llm_provider, api_key=api_key, model=model)
-        if sql.startswith("ERROR"):
-            return "I don't have enough information about your database to answer that.", None, None
+        return "I don't have enough information to generate a correct SQL query.", None, None
         
-    # 3. Execute with Retry Loop
+    # 4. Execute with Retry Loop (Reuse the execution logic)
     max_retries = 3
     attempts = 0
     last_error = ""
@@ -213,7 +276,7 @@ def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: st
         try:
             final_sql, data, df = execute_query(sql, db_url)
             
-            # 4. Final Answer formatting (Success case)
+            # Final Answer formatting
             llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
             summary_prompt = f"The user asked: {rewritten_question}\nThe SQL used was: {final_sql}\nThe resulting data is: {data[:5]}\n\nPlease provide a very brief summary of these results (1 sentence)."
             summary = llm.invoke(summary_prompt).content
@@ -225,10 +288,13 @@ def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: st
             attempts += 1
             
             if attempts < max_retries:
-                # pass the error back to LLM for correction
+                # Use generate_corrected_sql but with enhanced context
+                # To simplify, we'll use a modified correction prompt if needed, 
+                # but for now let's reuse generate_corrected_sql with combined context
+                combined_context = f"SCHEMA:\n{schema}\n\nKNOWLEDGE:\n{knowledge}"
                 sql = generate_corrected_sql(
                     question=rewritten_question,
-                    schema_context=schema_context,
+                    schema_context=combined_context,
                     failed_sql=sql,
                     error_message=last_error,
                     engine_type=db_type,
@@ -236,22 +302,8 @@ def run_sql_rag_pipeline(question: str, tenant_id: str, db_url: str, db_type: st
                     api_key=api_key,
                     model=model
                 )
-                
-                # If LLM reports insufficient schema during correction, try expanded context one last time
                 if sql.startswith("ERROR"):
-                    schema_context = retrieve_relevant_schema(question, tenant_id, k=10)
-                    sql = generate_corrected_sql(
-                        question=question,
-                        schema_context=schema_context,
-                        failed_sql=sql,
-                        error_message=last_error,
-                        engine_type=db_type,
-                        llm_provider=llm_provider,
-                        api_key=api_key,
-                        model=model
-                    )
-                    if sql.startswith("ERROR"):
-                        break
+                    break
             else:
                 break
 

@@ -37,6 +37,7 @@ class UploadedFile(Base):
     user_id     = Column(Integer, ForeignKey("admin_users.id"), index=True)
     filename    = Column(String(512), index=True)
     file_type   = Column(String(64))   # 'document' or 'knowledge_base'
+    source_type = Column(String(16))   # 'json', 'csv', 'sql'
     upload_date = Column(String(64))
     chunk_count = Column(Integer, default=0)
 

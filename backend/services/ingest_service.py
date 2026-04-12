@@ -5,7 +5,7 @@ Triggered automatically on every file upload (re-upload replaces old vectors).
 
 import os
 from pathlib import Path
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, CSVLoader, TextLoader
+from langchain_community.document_loaders import CSVLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from services.embed_service import add_documents, delete_collection
 from config import get_settings
@@ -23,13 +23,7 @@ def load_file(filepath: str) -> list:
         raise FileNotFoundError(f"File not found: {path}")
         
     ext = path.suffix.lower()
-    if ext == ".pdf":
-        loader = PyPDFLoader(str(path))
-        return loader.load()
-    elif ext in (".docx", ".doc"):
-        loader = Docx2txtLoader(str(path))
-        return loader.load()
-    elif ext == ".csv":
+    if ext == ".csv":
         loader = CSVLoader(str(path))
         return loader.load()
     elif ext == ".json":
@@ -37,10 +31,11 @@ def load_file(filepath: str) -> list:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
         return [Document(page_content=content, metadata={"source": str(path)})]
-    else:
-        # sql, md, txt, etc.
+    elif ext == ".sql":
         loader = TextLoader(str(path), encoding="utf-8")
         return loader.load()
+    else:
+        raise ValueError(f"Unsupported file type: {ext}. System now ONLY supports .json, .csv, and .sql.")
 
 def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=None, user_id=None) -> dict:
     """
@@ -56,10 +51,13 @@ def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=N
         docs = load_file(filepath)
         chunks = SPLITTER.split_documents(docs)
 
+        # Get file extension for type metadata (removal of the dot)
+        file_ext = Path(filepath).suffix.lower().replace(".", "")
+
         texts = [c.page_content for c in chunks]
         metadatas = [
             {**c.metadata, "tenant_id": tenant_id, "file_type": file_type,
-             "source": filename}
+             "source": filename, "type": file_ext}
             for c in chunks
         ]
 
@@ -82,6 +80,7 @@ def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=N
                 db.add(file_record)
             
             file_record.file_type = file_type
+            file_record.source_type = file_ext
             file_record.upload_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             file_record.chunk_count = count
             db.commit()

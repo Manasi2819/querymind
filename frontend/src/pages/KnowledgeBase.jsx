@@ -1,12 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { getFiles, uploadFile, deleteFile } from '../api/client'
 
-const DOC_TYPES = ['pdf', 'docx', 'txt']
-const KB_TYPES = ['sql', 'json', 'md', 'csv']
+const KB_TYPES = ['sql', 'json', 'csv']
 
 export default function KnowledgeBase() {
   const [activeTab, setActiveTab] = useState('upload') // 'upload' | 'particles'
-  const [category, setCategory] = useState('document')
+  const [category] = useState('knowledge_base')
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -126,37 +125,23 @@ export default function KnowledgeBase() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
             <div>
-              {/* Category */}
+              {/* Information */}
               <div className="form-group">
                 <label className="form-label">
-                  Knowledge Category
+                  Knowledge Hub
                   <span
-                    title="Knowledge Base files are prioritized for schema-related questions."
+                    title="DB Knowledge Base files (SQL, JSON, CSV) are prioritized for schema-related questions and SQL generation."
                     style={{ marginLeft: 6, cursor: 'help', color: 'var(--text-muted)' }}
                   >ⓘ</span>
                 </label>
-                <div className="radio-group">
-                  {[
-                    { val: 'document', label: '📖 General Document', desc: 'PDF, Word, TXT files' },
-                    { val: 'knowledge_base', label: '🧠 DB Knowledge Base', desc: 'SQL, JSON, MD, CSV — prioritized for schema queries' },
-                  ].map((opt) => (
-                    <label
-                      key={opt.val}
-                      className={`radio-option ${category === opt.val ? 'selected' : ''}`}
-                    >
-                      <input
-                        type="radio"
-                        name="category"
-                        value={opt.val}
-                        checked={category === opt.val}
-                        onChange={() => { setCategory(opt.val); setFile(null) }}
-                      />
-                      <div>
-                        <span className="radio-label">{opt.label}</span>
-                        <span className="radio-desc">{opt.desc}</span>
-                      </div>
-                    </label>
-                  ))}
+                <div style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '24px' }}>🧠</span>
+                    <div>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>DB Knowledge Base</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>SQL, JSON, CSV — prioritized for schema queries</div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -186,7 +171,7 @@ export default function KnowledgeBase() {
                   <>
                     <div className="drop-zone-title">Drag and drop file here</div>
                     <div className="drop-zone-sub">
-                      Limit 200MB per file • {category === 'document' ? 'PDF, DOCX, TXT' : 'SQL, JSON, MD, CSV'}
+                      Limit 200MB per file • SQL, JSON, CSV
                     </div>
                   </>
                 )}
@@ -207,10 +192,7 @@ export default function KnowledgeBase() {
             <div className="support-card">
               <h4>📋 Supported Formats</h4>
               <div className="support-item">
-                <strong>Docs:</strong> PDF, Word (.docx), TXT
-              </div>
-              <div className="support-item">
-                <strong>KB:</strong> SQL, JSON, MD, CSV
+                <strong>KB Only:</strong> SQL, JSON, CSV
               </div>
               <hr className="form-divider" style={{ margin: '12px 0' }} />
               <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
@@ -249,7 +231,7 @@ export default function KnowledgeBase() {
                   <thead>
                     <tr>
                       <th>Filename</th>
-                      <th>Type</th>
+                      <th>Format</th>
                       <th>Upload Date</th>
                       <th>Chunks</th>
                     </tr>
@@ -264,8 +246,12 @@ export default function KnowledgeBase() {
                           </span>
                         </td>
                         <td>
-                          <span className={`badge ${f.file_type === 'document' ? 'badge-blue' : 'badge-purple'}`}>
-                            {f.file_type}
+                          <span className={`badge ${
+                            f.source_type === 'csv' ? 'badge-green' : 
+                            f.source_type === 'json' ? 'badge-blue' : 
+                            f.source_type === 'sql' ? 'badge-purple' : 'badge-gray'
+                          }`}>
+                            {f.source_type || 'unknown'}
                           </span>
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>

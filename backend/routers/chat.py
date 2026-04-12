@@ -9,6 +9,8 @@ from models import db_models as models
 from services.llm_service import get_llm
 from routers.admin import get_db_url, get_llm_cfg, get_db_type
 from langchain_core.messages import HumanMessage, SystemMessage
+import re
+from services.sql_rag_service import FORBIDDEN_SQL_KEYWORDS
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -17,6 +19,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     question = request.message
     session_id = request.session_id
     user_id = request.user_id or 1
+
+    # Pre-emptive SQL injection/modification check
+    q_upper = question.upper()
+    for kw in FORBIDDEN_SQL_KEYWORDS:
+        if re.search(rf"\b{kw}\b", q_upper):
+            answer = "I cannot do that action, I can only fetch data and show it NA."
+            return ChatResponse(answer=answer, source="system", session_id=session_id)
 
     # Override LLM config if provided in request
     llm_cfg = get_llm_cfg(db_session=db, user_id=user_id)
@@ -86,10 +95,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             _save_turn_db("assistant", answer, None, None, source)
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
-        elif intent == "sql":
-            from services.sql_rag_service import run_sql_rag_pipeline
+        elif intent == "sql_with_context":
+            from services.sql_rag_service import run_context_aware_sql_pipeline
             
-            answer, sql, data = run_sql_rag_pipeline(
+            answer, sql, data = run_context_aware_sql_pipeline(
                 question, 
                 tenant_id=tenant_id, 
                 db_url=db_url, 
@@ -112,15 +121,9 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
         else:
-            llm = get_llm(provider=provider, api_key=api_key, model=selected_model)
-            context = f"{history_str}\nUser question: {question}"
-            messages = [
-                SystemMessage(content="You are a helpful enterprise assistant."),
-                HumanMessage(content=context),
-            ]
-            response = llm.invoke(messages)
-            answer = response.content
-            source = "general"
+            # chat intent or default fallback
+            answer = "I don't have answer to that."
+            source = "chat"
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, None, None, source)
             return ChatResponse(answer=answer, source=source, session_id=session_id)
