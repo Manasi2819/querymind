@@ -130,6 +130,8 @@ Open a **new terminal window**, activate the venv, then:
 ```powershell
 .\venv\Scripts\Activate.ps1     # Windows PowerShell
 # OR
+source venv/bin/activate        # Windows PowerShell
+# OR
 source venv/bin/activate         # Mac / Linux
 
 cd backend

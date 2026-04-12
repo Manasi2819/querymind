@@ -92,8 +92,11 @@ export default function Dashboard() {
               <div className="flex-between">
                 <div className="alert alert-success" style={{ marginBottom: 0, flex: 1 }}>
                   <span className="alert-icon">✅</span>
-                  <span>Database is connected and schema is synced.</span>
+                  <span>
+                    Database {stats.db_name ? <strong>{stats.db_name}</strong> : ''} is connected and schema is synced.
+                  </span>
                 </div>
+
                 <button
                   id="disconnect-db-btn"
                   className="btn btn-danger btn-sm"

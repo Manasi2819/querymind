@@ -98,19 +98,34 @@ async def get_stats(token_data: dict = Depends(verify_token), db: Session = Depe
     
     admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
     table_count = 0
+    db_name = None
+    
     if admin_settings and admin_settings.db_config:
-        enc_url = admin_settings.db_config.get("url")
+        cfg = admin_settings.db_config
+        db_name = cfg.get("database")
+        
+        enc_url = cfg.get("url")
         if enc_url:
-            url = decrypt_db_url(enc_url)
-            res = test_connection(url)
-            table_count = len(res.get("tables", []))
+            try:
+                url = decrypt_db_url(enc_url)
+                # If database field is missing (e.g. direct URL), extract from URL
+                if not db_name:
+                    db_name = url.split("/")[-1].split("?")[0]
+                
+                res = test_connection(url)
+                table_count = len(res.get("tables", []))
+            except Exception:
+                # Fallback if decryption fails or URL is malformed
+                pass
     
     return {
         "files": file_count,
         "tables": table_count,
         "llm": admin_settings.llm_config.get("provider", "Not configured") if admin_settings else "Not configured",
-        "db_connected": bool(admin_settings.db_config) if admin_settings else False
+        "db_connected": bool(admin_settings.db_config) if admin_settings else False,
+        "db_name": db_name
     }
+
 
 @router.get("/files")
 async def list_files(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
