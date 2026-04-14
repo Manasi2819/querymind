@@ -114,7 +114,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":
-            answer = answer_from_docs(question, tenant_id, "document", provider, api_key, history=history_str, model=selected_model)
+            answer = answer_from_docs(question, tenant_id, "general_document", provider, api_key, history=history_str, model=selected_model)
             source = "rag"
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, None, None, source)

@@ -49,8 +49,13 @@ def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5) -> str:
     embed_model = get_embed_model()
     query_embedding = embed_model.embed_query(query)
     
-    # We check both possible collection names for backward compatibility
-    collections_to_check = [f"{tenant_id}_document", f"{tenant_id}_knowledge_base"]
+    # We check all possible collection names for backward compatibility and coverage
+    collections_to_check = [
+        f"{tenant_id}_data_dictionary", 
+        f"{tenant_id}_general_document",
+        f"{tenant_id}_document", 
+        f"{tenant_id}_knowledge_base"
+    ]
     contexts = []
     
     for coll_name in collections_to_check:

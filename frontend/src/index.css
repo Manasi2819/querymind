@@ -582,6 +582,24 @@ a { text-decoration: none; color: inherit; }
   border-color: rgba(255,255,255,0.06);
 }
 
+.selectable-card {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: var(--transition);
+  opacity: 0.7;
+}
+.selectable-card:hover {
+  opacity: 1;
+  border-color: var(--purple-light);
+  background: var(--bg-card-hover);
+}
+.selectable-card.selected {
+  opacity: 1;
+  border-color: var(--purple);
+  background: var(--purple-soft);
+  box-shadow: 0 0 0 1px var(--purple);
+}
+
 .glass-dark {
   background: rgba(20,20,30,0.8);
   backdrop-filter: blur(10px);

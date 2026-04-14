@@ -9,7 +9,7 @@ from services.llm_service import get_llm
 def answer_from_docs(
     question: str,
     tenant_id: str,
-    file_type: str = "document",
+    file_type: str = "general_document",
     llm_provider: str = None,
     api_key: str = None,
     history: str = "",
@@ -17,13 +17,36 @@ def answer_from_docs(
 ) -> str:
     """Retrieves context from vector store and answers with LLM, considering chat history."""
     try:
-        collection_name = f"{tenant_id}_{file_type}"
-        store = get_vector_store(collection_name)
-        retriever = store.as_retriever(search_kwargs={"k": 4})
+        # We search across all relevant collections to ensure nothing is missed
+        collections = [
+            f"{tenant_id}_{file_type}",
+            f"{tenant_id}_general_document",
+            f"{tenant_id}_data_dictionary",
+            f"{tenant_id}_document",
+            f"{tenant_id}_knowledge_base"
+        ]
+        
+        # Deduplicate names and keep order
+        collections = list(dict.fromkeys(collections))
+        
+        all_docs = []
+        for coll_name in collections:
+            try:
+                store = get_vector_store(coll_name)
+                # Small K per collection to stay within token limits
+                all_docs.extend(store.as_retriever(search_kwargs={"k": 3}).invoke(question))
+            except:
+                continue
+
+        if not all_docs:
+            return "I don't have enough information to answer that based on the uploaded documents."
+
+        # Rerank/Limit total docs (simple top 6 for now)
+        docs = all_docs[:6]
         llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
 
-        template = """You are a helpful assistant. Use the following context and conversation history to answer the question.
-        If you don't know the answer, just say you don't know. Do not make up facts.
+        template = """You are a helpful enterprise assistant. Use the following retrieved context and conversation history to answer the question.
+        CRITICAL: If the answer is NOT in the context, just say you don't know. Do NOT use outside general knowledge.
 
         CONTEXT:
         {context}
@@ -37,7 +60,6 @@ def answer_from_docs(
         prompt = ChatPromptTemplate.from_template(template)
         
         # We manually retrieve context to have full control over prompt formatting
-        docs = retriever.invoke(question)
         context = "\n\n".join([d.page_content for d in docs])
         
         chain = prompt | llm

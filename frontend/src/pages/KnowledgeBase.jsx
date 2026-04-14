@@ -2,10 +2,11 @@ import { useEffect, useState, useRef } from 'react'
 import { getFiles, uploadFile, deleteFile } from '../api/client'
 
 const KB_TYPES = ['sql', 'json', 'csv']
+const DOC_TYPES = ['pdf', 'docx', 'txt', 'md']
 
 export default function KnowledgeBase() {
   const [activeTab, setActiveTab] = useState('upload') // 'upload' | 'particles'
-  const [category] = useState('knowledge_base')
+  const [uploadType, setUploadType] = useState('data_dictionary') // 'data_dictionary' | 'general_document'
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -17,7 +18,7 @@ export default function KnowledgeBase() {
   const [deleteMsg, setDeleteMsg] = useState('')
   const fileInputRef = useRef()
 
-  const acceptedTypes = (category === 'document' ? DOC_TYPES : KB_TYPES).join(',.')
+  const acceptedTypes = (uploadType === 'data_dictionary' ? KB_TYPES : DOC_TYPES).join(',.')
 
   const loadFiles = async () => {
     setFilesLoading(true)
@@ -53,11 +54,11 @@ export default function KnowledgeBase() {
     setUploading(true)
     setUploadMsg(null)
     try {
-      const data = await uploadFile(file, category)
+      const data = await uploadFile(file, uploadType)
       const chunks = data.chunks || 0
       setUploadMsg({
         type: 'success',
-        text: `✅ Success: File "${file.name}" has been indexed into ${chunks} chunks. Available in Managed Particles.`,
+        text: `✅ Success: File "${file.name}" has been indexed into ${chunks} chunks as ${uploadType === 'data_dictionary' ? 'Data Dictionary' : 'General Document'}.`,
       })
       setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -123,27 +124,37 @@ export default function KnowledgeBase() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
             <div>
-              {/* Information */}
-              <div className="form-group">
-                <label className="form-label">
-                  Knowledge Hub
-                  <span
-                    title="DB Knowledge Base files (SQL, JSON, CSV) are prioritized for schema-related questions and SQL generation."
-                    style={{ marginLeft: 6, cursor: 'help', color: 'var(--text-muted)' }}
-                  >ⓘ</span>
-                </label>
-                <div style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* Type Selection */}
+              <div className="section-title" style={{ marginTop: 0, fontSize: '14px', opacity: 0.8 }}>Select Upload Category</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
+                <div 
+                  className={`card selectable-card ${uploadType === 'data_dictionary' ? 'selected' : ''}`}
+                  onClick={() => { setUploadType('data_dictionary'); setFile(null); }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ fontSize: '24px' }}>🧠</span>
                     <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>DB Knowledge Base</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>SQL, JSON, CSV — prioritized for schema queries</div>
+                      <div style={{ fontWeight: 600 }}>Data Dictionary</div>
+                      <div style={{ fontSize: '11px', opacity: 0.7 }}>SQL, JSON, CSV</div>
+                    </div>
+                  </div>
+                </div>
+                <div 
+                  className={`card selectable-card ${uploadType === 'general_document' ? 'selected' : ''}`}
+                  onClick={() => { setUploadType('general_document'); setFile(null); }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '24px' }}>📄</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>General Document</div>
+                      <div style={{ fontSize: '11px', opacity: 0.7 }}>PDF, DOCX, TXT, MD</div>
                     </div>
                   </div>
                 </div>
               </div>
+
+
 
               {/* Drop Zone */}
               <div
@@ -161,7 +172,6 @@ export default function KnowledgeBase() {
                   onChange={handleFileChange}
                   style={{ display: 'none' }}
                 />
-                <div className="drop-zone-icon">☁️</div>
                 {file ? (
                   <>
                     <div className="drop-zone-title">📄 {file.name}</div>
@@ -169,9 +179,10 @@ export default function KnowledgeBase() {
                   </>
                 ) : (
                   <>
+                    <div className="drop-zone-icon">☁️</div>
                     <div className="drop-zone-title">Drag and drop file here</div>
                     <div className="drop-zone-sub">
-                      Limit 200MB per file • SQL, JSON, CSV
+                      Limit 200MB per file • {uploadType === 'data_dictionary' ? 'SQL, JSON, CSV' : 'PDF, DOCX, TXT, MD'}
                     </div>
                   </>
                 )}
@@ -187,19 +198,6 @@ export default function KnowledgeBase() {
                 {uploading ? <><span className="spinner" /> Processing...</> : '⬆️ Upload & Index'}
               </button>
             </div>
-
-            {/* Support Card */}
-            <div className="support-card">
-              <h4>📋 Supported Formats</h4>
-              <div className="support-item">
-                <strong>KB Only:</strong> SQL, JSON, CSV
-              </div>
-              <hr className="form-divider" style={{ margin: '12px 0' }} />
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                Knowledge Base files are prioritized for schema-related questions and SQL generation.
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -241,15 +239,19 @@ export default function KnowledgeBase() {
                       <tr key={i}>
                         <td>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                            <span>{f.file_type === 'document' ? '📄' : '🧠'}</span>
-                            <span>{f.filename}</span>
+                            <span>{f.file_type === 'general_document' || f.file_type === 'document' ? '📄' : '🧠'}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: 500 }}>{f.filename}</span>
+                              <span style={{ fontSize: '10px', opacity: 0.6 }}>{f.file_type === 'data_dictionary' || f.file_type === 'knowledge_base' ? 'Data Dictionary' : 'General Doc'}</span>
+                            </div>
                           </span>
                         </td>
                         <td>
                           <span className={`badge ${
-                            f.source_type === 'csv' ? 'badge-green' : 
-                            f.source_type === 'json' ? 'badge-blue' : 
-                            f.source_type === 'sql' ? 'badge-purple' : 'badge-gray'
+                            ['csv', 'xlsx'].includes(f.source_type) ? 'badge-green' : 
+                            ['json'].includes(f.source_type) ? 'badge-blue' : 
+                            ['sql'].includes(f.source_type) ? 'badge-purple' : 
+                            ['pdf'].includes(f.source_type) ? 'badge-red' : 'badge-gray'
                           }`}>
                             {f.source_type || 'unknown'}
                           </span>

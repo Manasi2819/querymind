@@ -5,7 +5,7 @@ Triggered automatically on every file upload (re-upload replaces old vectors).
 
 import os
 from pathlib import Path
-from langchain_community.document_loaders import CSVLoader, TextLoader
+from langchain_community.document_loaders import CSVLoader, TextLoader, PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from services.embed_service import add_documents, delete_collection
 from config import get_settings
@@ -34,8 +34,17 @@ def load_file(filepath: str) -> list:
     elif ext == ".sql":
         loader = TextLoader(str(path), encoding="utf-8")
         return loader.load()
+    elif ext == ".pdf":
+        loader = PyPDFLoader(str(path))
+        return loader.load()
+    elif ext in [".docx", ".doc"]:
+        loader = Docx2txtLoader(str(path))
+        return loader.load()
+    elif ext in [".txt", ".md"]:
+        loader = TextLoader(str(path), encoding="utf-8")
+        return loader.load()
     else:
-        raise ValueError(f"Unsupported file type: {ext}. System now ONLY supports .json, .csv, and .sql.")
+        raise ValueError(f"Unsupported file type: {ext}. System now supports .json, .csv, .sql, .pdf, .docx, .txt, .md")
 
 def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=None, user_id=None) -> dict:
     """
@@ -46,6 +55,11 @@ def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=N
     try:
         from models.db_models import UploadedFile
         filename = Path(filepath).name
+        
+        # Handle classification logic
+        if file_type == 'knowledge_base':
+            file_type = 'data_dictionary'
+            
         collection_name = f"{tenant_id}_{file_type}"
         
         docs = load_file(filepath)

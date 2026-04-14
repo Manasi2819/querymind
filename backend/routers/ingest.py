@@ -10,7 +10,7 @@ settings = get_settings()
 @router.post("/file")
 async def ingest(
     file: UploadFile = File(...),
-    file_type: str = Form("document"),
+    file_type: str = Form("general_document"),
     tenant_id: str = Form("default"),
 ):
     """Public ingest endpoint (no auth). For internal service calls."""
