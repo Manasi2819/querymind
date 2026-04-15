@@ -175,12 +175,34 @@ async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_t
         admin_settings.llm_config = {}
         
     incoming_cfg = config.model_dump(exclude_none=True)
-    if "api_key" in incoming_cfg and incoming_cfg["api_key"]:
-        incoming_cfg["api_key"] = encrypt_db_url(incoming_cfg["api_key"])
-        
+    
     # Create a new dictionary to ensure SQLAlchemy detects the change
     current_cfg = dict(admin_settings.llm_config) if admin_settings.llm_config else {}
+    
+    # If provider is changing, we should be careful about old settings
+    old_provider = current_cfg.get("provider")
+    new_provider = incoming_cfg.get("provider")
+    
+    if new_provider and old_provider and new_provider != old_provider:
+        # Provider switch detected. 
+        # If switching TO ollama, we should clear cloud-specific keys
+        if new_provider == "ollama":
+            current_cfg = {"provider": "ollama"} # Reset and only use new provider
+            # If model isn't provided, get_llm will use default from settings (phi3:mini)
+        else:
+            # Switching between cloud providers, still probably better to reset 
+            # or at least clear the API key and model if they aren't in incoming
+            current_cfg = {"provider": new_provider}
+
+    # Now apply updates
     current_cfg.update(incoming_cfg)
+    
+    # Encrypt API key if present
+    if "api_key" in current_cfg and current_cfg["api_key"]:
+        # Only encrypt if it's not already encrypted (naive check: cloud keys usually start with sk- or similar)
+        # or if it's coming from the frontend (which it is here)
+        current_cfg["api_key"] = encrypt_db_url(current_cfg["api_key"])
+        
     admin_settings.llm_config = current_cfg
     db.commit()
     return {"message": "LLM provider updated", "provider": admin_settings.llm_config.get("provider")}

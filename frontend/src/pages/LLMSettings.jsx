@@ -38,8 +38,8 @@ export default function LLMSettings() {
     setOllamaLoading(true)
     setMessage(null)
     try {
-      await setLLMConfig({ provider: 'ollama' })
-      setMessage({ type: 'success', text: '✅ Switched to Ollama phi3-mini (local)' })
+      await setLLMConfig({ provider: 'ollama', model: 'phi3:mini' })
+      setMessage({ type: 'success', text: '✅ Switched to Ollama phi3:mini (local)' })
       await loadConfig()
     } catch (e) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Failed to switch to Ollama' })
@@ -84,7 +84,7 @@ export default function LLMSettings() {
       <div className="llm-cards">
         {/* Local Ollama */}
         <div className="llm-card">
-          <div className="llm-card-title">🏠 Local — Ollama phi3-mini</div>
+          <div className="llm-card-title">🏠 Local — Ollama phi3:mini</div>
           <p className="llm-card-desc">
             Runs entirely on your machine. <span style={{ color: 'var(--success)' }}>No data sent externally.</span> Requires Ollama to be running locally.
           </p>
@@ -94,7 +94,7 @@ export default function LLMSettings() {
             onClick={handleOllama}
             disabled={ollamaLoading}
           >
-            {ollamaLoading ? <><span className="spinner" /> Switching...</> : '🏠 Use Ollama (phi3-mini)'}
+            {ollamaLoading ? <><span className="spinner" /> Switching...</> : '🏠 Use Ollama (phi3:mini)'}
           </button>
         </div>
 
