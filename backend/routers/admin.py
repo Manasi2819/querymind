@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-import os, json, shutil
+import os
+import json
+import shutil
 from pathlib import Path
 from auth import create_access_token, verify_token, verify_password, get_password_hash
 from models.schemas import DBConfig, LLMConfig, TokenResponse, UserRegistration
@@ -29,9 +31,9 @@ async def register(data: UserRegistration, db: Session = Depends(get_db)):
     db.add(new_user)
     db.flush() # Get ID
     
-    # Init settings
-    settings = AdminSettings(user_id=new_user.id)
-    db.add(settings)
+    # Init settings for new user
+    new_settings = AdminSettings(user_id=new_user.id)
+    db.add(new_settings)
     db.commit()
     
     return {"message": "User registered successfully", "user_id": new_user.id}

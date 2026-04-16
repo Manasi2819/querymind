@@ -8,9 +8,61 @@ QueryMind is a high-performance, RAG-enabled chatbot that bridges the gap betwee
 
 ```
 querymind/
-├── backend/          → FastAPI + LangChain + ChromaDB (port 8000)
-├── frontend/         → React + Vite admin panel  (port 5173)  
-└── widget/           → Embeddable chat widget for 3rd-party apps
+├── .env.example              ← copy to .env and configure
+├── .gitignore
+├── docker-compose.yml
+├── README.md
+├── DEPLOYMENT_AND_INTEGRATION.md
+├── TECHNICAL_ARCHITECTURE.md
+│
+├── backend/
+│   ├── core/
+│   │   ├── __init__.py
+│   │   └── db_init.py        ← auto-creates MySQL/PG database on startup
+│   ├── models/
+│   │   ├── db_models.py      ← SQLAlchemy ORM models
+│   │   └── schemas.py        ← Pydantic request/response schemas
+│   ├── routers/
+│   │   ├── admin.py          ← auth, LLM config, DB config, file upload
+│   │   ├── chat.py           ← main chat endpoint + intent routing
+│   │   ├── ingest.py         ← public (no-auth) ingest endpoint
+│   │   └── sessions.py       ← chat session CRUD
+│   ├── services/
+│   │   ├── database_connection.py   ← SQLAlchemy engine factory
+│   │   ├── embed_service.py         ← ChromaDB vector store helpers
+│   │   ├── encryption.py            ← Fernet encrypt/decrypt for secrets
+│   │   ├── ingest_service.py        ← file loader → chunker → embedder
+│   │   ├── intent_classifier.py     ← LLM-based SQL / RAG / chat routing
+│   │   ├── llm_service.py           ← unified LLM factory (5 providers)
+│   │   ├── rag_service.py           ← document RAG retrieval + answer
+│   │   ├── sql_metadata_service.py  ← schema introspection → ChromaDB
+│   │   └── sql_rag_service.py       ← context-aware SQL generation pipeline
+│   ├── tests/                ← pytest unit tests
+│   ├── alembic/              ← database migration scripts
+│   ├── auth.py               ← JWT + bcrypt utilities
+│   ├── config.py             ← pydantic-settings (reads .env)
+│   ├── database.py           ← engine, SessionLocal, Base, get_db
+│   ├── main.py               ← FastAPI app entry point
+│   ├── manage.py             ← CLI: init-db, migrate
+│   ├── migrate_db.py         ← standalone SQLite → MySQL/PG migration tool
+│   ├── reset_vector_store.py ← utility: clear ChromaDB collections for a user
+│   ├── alembic.ini
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── frontend/
+│   ├── src/
+│   │   ├── api/              ← axios client + session store
+│   │   ├── components/       ← Sidebar
+│   │   └── pages/            ← Chat, Dashboard, DB Config, KB, LLM, Login
+│   ├── package.json
+│   └── vite.config.js
+│
+├── mcp_servers/
+│   ├── mcp_sql_agent.py      ← MCP tool: run SQL queries
+│   └── mcp_vector_db.py      ← MCP tool: vector search
+│
+└── widget/                   ← embeddable JS chat widget
 ```
 
 | Layer | Technology |
@@ -145,32 +197,9 @@ uvicorn main:app --reload --port 8000
 
 ---
 
-### Step 6 — Register the Admin User (First Time Only)
-
-The first time you run the system, you must create the admin user. Open a new terminal and run:
-
-```powershell
-# Using PowerShell (Invoke-RestMethod)
-Invoke-RestMethod -Uri "http://localhost:8000/admin/register" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{"username": "admin", "password": "admin123"}'
-```
-
-Or using **curl** (Git Bash / Linux / Mac):
-
-```bash
-curl -X POST http://localhost:8000/admin/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin123"}'
-```
-
-> ✅ You should see: `{"message": "User registered successfully", "user_id": 1}`  
-> You only need to do this **once**. The user is stored in the database.
-
 ---
 
-### Step 7 — Start the React Frontend
+### Step 6 — Start the React Frontend
 
 Open **another new terminal window** (no venv needed here):
 
@@ -186,12 +215,12 @@ npm run dev
 
 ---
 
-### Step 8 — Log In
+### Step 7 — Log In
 
 1. Open your browser at **http://localhost:5173**
-2. Enter:
-   - **Username**: `admin`
-   - **Password**: `admin123` (or whatever you set in `.env`)
+2. Enter the credentials you configured in your **.env** file:
+   - **Username**: (Default: `admin`)
+   - **Password**: (Default: `admin123`)
 3. Click **Sign In**
 
 ---
@@ -242,7 +271,6 @@ Access:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/admin/register` | Register a new admin user |
 | `POST` | `/admin/token` | Login and get JWT token |
 | `GET` | `/admin/stats` | Dashboard stats |
 | `POST` | `/admin/llm-config` | Set LLM provider |
@@ -261,25 +289,12 @@ Access:
 
 ## 📑 Key Features
 
-- **Hybrid RAG Logic** — Intelligently routes between SQL (structured) and Document (unstructured) retrieval.
+- **Hybrid SQL - RAG Logic** — Intelligently routes between SQL (structured) and Document (unstructured) retrieval.
 - **Model Context Protocol (MCP)** — Seamlessly plug your QueryMind data into external AI systems.
 - **Metadata-Driven SQL RAG** — Auto-fetches DB schemas, indexes them in ChromaDB, and guides the LLM safely.
 - **Safe SQL Execution** — Built-in guardrails restrict to read-only `SELECT` statements via automated self-correction loops.
 - **Multi-Tenant Isolation** — Native `tenant_id` partitioning ensures enterprise data separation.
 - **GPT-Style Chat UI** — Multi-session history, dynamic SQL expander, and dark mode.
-
----
-
-## 🔧 Troubleshooting
-
-| Problem | Solution |
-|---|---|
-| `venv` not activating | Run PowerShell as Administrator; run `Set-ExecutionPolicy RemoteSigned` |
-| `npm: command not found` | Install Node.js 18+ from nodejs.org |
-| Login fails (Invalid credentials) | Make sure you completed **Step 6** to register the admin user |
-| Backend 401 Unauthorized | Token expired — refresh the page and log in again |
-| ChromaDB error on startup | Delete `chroma_db/` folder and restart the backend |
-| Vite port 5173 already in use | Change port: `npm run dev -- --port 3000` |
 
 ---
 

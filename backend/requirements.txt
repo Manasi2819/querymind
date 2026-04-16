@@ -1,16 +1,28 @@
+# ── Web Framework ─────────────────────────────────────────────────────────────
 fastapi
 starlette==0.38.2
 uvicorn[standard]
+python-multipart
+
+# ── Auth & Security ───────────────────────────────────────────────────────────
 python-jose[cryptography]
 passlib
 bcrypt>=4.0.0
-python-multipart
+cryptography
+
+# ── Data Validation ───────────────────────────────────────────────────────────
 pydantic
 pydantic-settings
+python-dotenv
+
+# ── Database ──────────────────────────────────────────────────────────────────
 sqlalchemy
 psycopg2-binary
 pymysql
 pymssql
+alembic
+
+# ── LLM & RAG ─────────────────────────────────────────────────────────────────
 langchain>=0.3.0
 langchain-community>=0.3.0
 langchain-openai>=0.2.0
@@ -20,20 +32,25 @@ langchain-groq>=0.1.0
 langchain-ollama>=0.2.0
 langchain-chroma>=0.1.4
 sentence-transformers>=3.0.0
+
+# ── File Ingestion ────────────────────────────────────────────────────────────
 pypdf
 python-docx
 docx2txt
 pandas
 openpyxl
+
+# ── Async / Task Queue ────────────────────────────────────────────────────────
 celery
 redis
 httpx
-python-dotenv
-streamlit
-requests
-pytest
-pytest-asyncio
-pytest-mock
-pytest-cov
-alembic
+
+# ── MCP Servers ───────────────────────────────────────────────────────────────
 mcp
+requests
+
+# ── Dev / Test only (not required in production) ──────────────────────────────
+# pytest
+# pytest-asyncio
+# pytest-mock
+# pytest-cov

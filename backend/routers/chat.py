@@ -1,15 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
+import re
+import traceback
 from sqlalchemy.orm import Session
 from database import get_db
 from models.schemas import ChatRequest, ChatResponse
 from services.intent_classifier import classify_intent
-
 from services.rag_service import answer_from_docs
 from models import db_models as models
-from services.llm_service import get_llm
 from routers.admin import get_db_url, get_llm_cfg, get_db_type
-from langchain_core.messages import HumanMessage, SystemMessage
-import re
 from services.sql_rag_service import FORBIDDEN_SQL_KEYWORDS
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -43,7 +41,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     
     # We use f"user_{user_id}" as the tenant_id for RAG lookup
     tenant_id = f"user_{user_id}"
-    has_docs = True # Rougly assumed
+    has_docs = True  # TODO: check actual ChromaDB collection presence for accuracy
 
     # Ensure session exists or create it
     session_title = request.session_title or "New chat"
@@ -129,10 +127,9 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
     except Exception as e:
-        import traceback
         error_msg = str(e)
         print(traceback.format_exc())
-        
+
         # User-friendly hints for common LLM errors
         if "not found" in error_msg.lower() and "model" in error_msg.lower():
             friendly_detail = f"LLM Error: The model '{selected_model}' was not found by {provider}. Please check your configuration or pull the model if using Ollama."

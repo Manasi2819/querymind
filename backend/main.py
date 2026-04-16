@@ -1,21 +1,23 @@
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
+import os
 from contextlib import asynccontextmanager
-from routers import chat, admin, ingest, sessions
-from sqlalchemy.orm import Session
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from database import SessionLocal, Base, engine
 from models.db_models import AdminUser
 from auth import get_password_hash
 from config import get_settings
-import os
+from routers import chat, admin, ingest, sessions
 
 settings = get_settings()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables
+    """Application lifespan: create DB tables and seed the default admin user."""
+    # Create all tables defined by the ORM models
     Base.metadata.create_all(bind=engine)
-    
+
     # Seed initial admin user if not exists
     db = SessionLocal()
     try:
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
+
 app = FastAPI(
     title="QueryMind API",
     description="Enterprise chatbot platform — plug into any application",
@@ -47,16 +50,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(ingest.router)
 app.include_router(sessions.router)
 
-from fastapi.staticfiles import StaticFiles
-script_dir = os.path.dirname(__file__)
-widget_dir = os.path.join(script_dir, "../widget")
+# ── Widget static files (served at /widget if the dir exists) ─────────────────
+widget_dir = os.path.join(os.path.dirname(__file__), "../widget")
 if os.path.exists(widget_dir):
     app.mount("/widget", StaticFiles(directory=widget_dir), name="widget")
+
 
 @app.get("/")
 async def root():

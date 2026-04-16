@@ -37,9 +37,9 @@ ENV/
 *.sqlite
 *.sqlite3
 *.sqlite-journal
-tests/test.db
-backend/chroma_db/
-backend/uploads/
+chroma_db/
+uploads/
+chroma_db_old_backup/
 querymind_metadata.db
 
 # Alembic

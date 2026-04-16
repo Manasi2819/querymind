@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     fernet_key: str = ""
 
     # ── ChromaDB ──────────────────────────────────────────────────────────
-    chroma_persist_dir: str = "./chroma_db"
+    chroma_persist_dir: str = "../chroma_db"
 
     # ── File uploads ──────────────────────────────────────────────────────
     upload_dir: str = "./uploads"

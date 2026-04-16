@@ -35,7 +35,7 @@ def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 5) -> str:
         res_sql = col_sql.query(query_embeddings=[query_embedding], n_results=k)
         if res_sql and res_sql['documents'][0]:
             return "\n\n".join(res_sql['documents'][0])
-    except:
+    except Exception:
         pass
 
     return "No relevant database schema found."
@@ -64,7 +64,7 @@ def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5) -> str:
             res = col.query(query_embeddings=[query_embedding], n_results=k)
             if res and res['documents'][0]:
                 contexts.extend(res['documents'][0])
-        except:
+        except Exception:
             pass
             
     if not contexts:
@@ -98,31 +98,7 @@ def rewrite_query(question: str, history: str = "", llm_provider: str = None, ap
     rewritten = response.content.strip()
     return rewritten
 
-def generate_sql_with_context(question: str, schema: str, knowledge: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
-    """
-    Constructs the specialized 'context-aware' prompt for SQL generation.
-    """
-    llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
-    
-    prompt = f"""You are an expert SQL generator.
 
-DATABASE SCHEMA:
-{schema}
-
-EXTERNAL KNOWLEDGE:
-{knowledge}
-
-USER QUESTION:
-{question}
-
-INSTRUCTIONS:
-- Use the DATABASE SCHEMA to understand table and column names.
-- Use the EXTERNAL KNOWLEDGE to understand business logic, mappings, or specific values.
-- Return ONLY the raw SQL code for {engine_type}. No explanation, no markdowns.
-- Ensure the query is read-only (SELECT only).
-- If the question cannot be answered, return "ERROR: Information insufficient".
-
-### SQL QUERY:"""
     
 def _extract_sql(text: str) -> str:
     """

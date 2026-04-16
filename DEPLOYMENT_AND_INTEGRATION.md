@@ -123,7 +123,7 @@ const USER_ID = 1;                             // Your unique Vendor/Admin ID
 Paste the widget markup and script into your host application's footer. 
 
 > [!TIP]
-> **Multi-App Isolation**: If you have multiple clients (e.g., App A and App B), register each as a new user via the API (`POST /admin/register`). Use their specific `user_id` in their respective widget configurations. QueryMind will automatically isolate their chat history and knowledge base.
+> **Multi-App Isolation**: If you have multiple distinct applications or clients, you can create separate user IDs in the database and use their specific `user_id` in their respective widget configurations. QueryMind automatically isolates chat history and knowledge bases based on this ID.
 
 ---
 
@@ -132,7 +132,6 @@ Paste the widget markup and script into your host application's footer.
 | Endpoint | Method | Auth | Usage |
 |---|---|---|---|
 | `/admin/token` | `POST` | None | Login to get JWT access token |
-| `/admin/register` | `POST` | None | Register a new vendor/user (Multi-Tenant) |
 | `/chat` | `POST` | None | Main chat endpoint (Requires `user_id`) |
 | `/admin/db-config` | `POST` | JWT | Connect a database to the AI |
 | `/admin/upload` | `POST` | JWT | Add documents to the Knowledge Base |

@@ -137,7 +137,7 @@ cd querymind-chatbot
 
 # 2. Copy and configure environment
 copy .env.example .env
-# (Edit .env with your keys)
+# (Edit .env with your keys and set ADMIN_USERNAME/PASSWORD)
 
 # 3. Set up Python environment
 python -m venv venv
@@ -148,21 +148,17 @@ pip install -r requirements.txt
 cd ..
 
 # 4. Start the backend
+# (Wait for "Application startup complete" — admin user is seeded automatically)
 cd backend
 uvicorn main:app --reload --port 8000
 
-# 5. (New terminal) register admin user — first time only
-Invoke-RestMethod -Uri "http://localhost:8000/admin/register" `
-  -Method POST -ContentType "application/json" `
-  -Body '{"username": "admin", "password": "admin123"}'
-
-# 6. (New terminal) Start the React frontend
+# 5. (New terminal) Start the React frontend
 cd frontend
 npm install
 npm run dev
 
-# 7. Open in browser
-# http://localhost:5173  → React Admin Panel
+# 6. Open in browser
+# http://localhost:5173  → React Admin Panel (Login with .env credentials)
 # http://localhost:8000/docs → API Docs
 ```
 

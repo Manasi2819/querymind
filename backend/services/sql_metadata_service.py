@@ -4,7 +4,6 @@ SQL Metadata Service — fetches and embeds database schema information.
 
 from sqlalchemy import create_engine, inspect
 import chromadb
-from chromadb.config import Settings
 from config import get_settings
 from services.llm_service import get_embed_model
 
