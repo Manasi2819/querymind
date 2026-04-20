@@ -14,22 +14,32 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: create DB tables and seed the default admin user."""
-    # Create all tables defined by the ORM models
-    Base.metadata.create_all(bind=engine)
+    print("🚀 App lifespan: Syncing admin user...")
+    
+    # Wait for entrypoint.sh to finish migrations. 
+    # We NO LONGER call Base.metadata.create_all(bind=engine) here 
+    # because it conflicts with Alembic's initial migration on MySQL.
 
-    # Seed initial admin user if not exists
     db = SessionLocal()
     try:
         admin_user = db.query(AdminUser).filter(AdminUser.username == settings.admin_username).first()
         if not admin_user:
-            print(f"Seeding initial admin user: {settings.admin_username}")
+            print(f"👤 Seeding initial admin user: {settings.admin_username}")
             new_admin = AdminUser(
                 username=settings.admin_username,
                 password_hash=get_password_hash(settings.admin_password)
             )
             db.add(new_admin)
             db.commit()
+            print("✅ Admin user seeded successfully.")
+        else:
+            # Sync password with .env to ensure login works
+            print(f"👤 Syncing password for admin user: {settings.admin_username}")
+            admin_user.password_hash = get_password_hash(settings.admin_password)
+            db.commit()
+            print("✅ Admin password synced.")
+    except Exception as e:
+        print(f"❌ Error during admin sync: {str(e)}")
     finally:
         db.close()
     yield

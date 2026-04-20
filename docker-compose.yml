@@ -87,7 +87,7 @@ services:
     networks:
       - querymind_net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v1/heartbeat || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8000' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -105,7 +105,7 @@ services:
     ports:
       - "11434:11434"        # Exposed so you can also run `ollama` CLI locally
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 15s
       timeout: 10s
       retries: 6
@@ -191,7 +191,7 @@ services:
     ports:
       - "80:80"                       # Main entry point for the web UI
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 3

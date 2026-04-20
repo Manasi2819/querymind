@@ -41,10 +41,17 @@ async def register(data: UserRegistration, db: Session = Depends(get_db)):
 
 @router.post("/token", response_model=TokenResponse)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(f"🔑 Login attempt for user: {form_data.username}")
     user = db.query(AdminUser).filter(AdminUser.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password_hash):
+    if not user:
+        print(f"❌ User '{form_data.username}' not found in database.")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
+    if not verify_password(form_data.password, user.password_hash):
+        print(f"❌ Password mismatch for user: {form_data.username}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    print(f"✅ Login successful for: {form_data.username}")
     token = create_access_token({"sub": user.username, "user_id": user.id})
     return TokenResponse(access_token=token)
 

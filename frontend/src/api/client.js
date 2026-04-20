@@ -1,7 +1,10 @@
 import axios from 'axios'
 import { clearQueryCache } from './sessionStore'
 
-const API_BASE = import.meta.env.VITE_API_URL || '' // Configurable via ENV, fallback to same-origin/proxy
+let API_BASE = import.meta.env.VITE_API_URL || '' // Configurable via ENV, fallback to same-origin/proxy
+if (API_BASE === '/') {
+    API_BASE = '' // Prevent //admin/token protocol-relative URL bug
+}
 
 let token = localStorage.getItem('qm_token') || null
 

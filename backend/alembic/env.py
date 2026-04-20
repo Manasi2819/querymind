@@ -13,7 +13,7 @@ import os
 # Add the parent directory to sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from database import Base, DB_URL
+from database import Base, DATABASE_URL
 # Import models for autogenerate support
 from models.db_models import AdminUser, AdminSettings
 
@@ -48,7 +48,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = DB_URL
+    url = DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -68,7 +68,7 @@ def run_migrations_online() -> None:
 
     """
     from sqlalchemy import create_engine
-    connectable = create_engine(DB_URL)
+    connectable = create_engine(DATABASE_URL)
 
     with connectable.connect() as connection:
         context.configure(

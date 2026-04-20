@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     default-libmysqlclient-dev \
     pkg-config \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # ── CPU-only PyTorch (kept in its own layer for caching) ───────────────────
@@ -43,8 +44,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # ── Entrypoint Script ────────────────────────────────────────────────────────
-# Make the entrypoint executable (LF line endings required in the container)
-RUN chmod +x entrypoint.sh
+# Use dos2unix to ensure LF line endings (required for Linux)
+RUN dos2unix entrypoint.sh && chmod +x entrypoint.sh
 
 # ── Healthcheck ─────────────────────────────────────────────────────────────
 HEALTHCHECK --interval=15s --timeout=10s --start-period=40s --retries=5 \
@@ -52,4 +53,4 @@ HEALTHCHECK --interval=15s --timeout=10s --start-period=40s --retries=5 \
 
 EXPOSE 8000
 
-CMD ["./entrypoint.sh"]
+CMD ["sh", "./entrypoint.sh"]
