@@ -19,7 +19,9 @@ python-dotenv
 sqlalchemy
 psycopg2-binary
 pymysql
-pymssql
+# pymssql is optional — only needed for Microsoft SQL Server.
+# It requires a C compiler on some platforms. Install manually if needed:
+# pip install pymssql
 alembic
 
 # ── LLM & RAG ─────────────────────────────────────────────────────────────────
@@ -40,14 +42,13 @@ docx2txt
 pandas
 openpyxl
 
-# ── Async / Task Queue ────────────────────────────────────────────────────────
-celery
-redis
+# ── Async / HTTP ─────────────────────────────────────────────────────────────
 httpx
 
-# ── MCP Servers ───────────────────────────────────────────────────────────────
-mcp
-requests
+# ── MCP Servers (optional) ───────────────────────────────────────────────────
+# Only needed if you plan to use the mcp_servers/ integrations.
+# Install manually if required: pip install mcp
+# mcp
 
 # ── Dev / Test only (not required in production) ──────────────────────────────
 # pytest

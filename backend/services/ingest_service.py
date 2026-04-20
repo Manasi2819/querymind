@@ -78,8 +78,6 @@ def ingest_file(filepath: str, tenant_id: str, file_type: str = "document", db=N
         # RE-UPLOAD logic: delete old vectors for THIS FILE only
         from services.embed_service import delete_by_metadata
         delete_by_metadata(collection_name, {"source": filename})
-        # Note: If delete_by_metadata is not yet added to embed_service, we'll need to add it.
-        # But for new implementation, let's assume we use it.
 
         count = add_documents(texts, metadatas, collection_name)
 

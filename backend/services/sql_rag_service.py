@@ -16,37 +16,49 @@ FORBIDDEN_SQL_KEYWORDS = [
     "CREATE", "REPLACE", "GRANT", "REVOKE", "EXEC", "EXECUTE"
 ]
 
+# FORBIDDEN_TABLES: Internal tables that should NEVER be queried by the AI.
+FORBIDDEN_TABLES = ["admin_users", "admin_settings", "chat_sessions", "chat_messages", "uploaded_files"]
+
 settings = get_settings()
 
 def get_chroma_client():
     return chromadb.PersistentClient(path=settings.chroma_persist_dir)
 
-def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 5) -> str:
+def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 5, base_url: str = None) -> str:
     """
     Search ChromaDB for the most relevant table/column metadata chunks.
     This specifically targets the auto-indexed SQL metadata.
     """
     client = get_chroma_client()
-    embed_model = get_embed_model()
+    embed_model = get_embed_model(base_url=base_url)
     query_embedding = embed_model.embed_query(query)
     
     try:
         col_sql = client.get_collection(name=f"{tenant_id}_sql_metadata")
-        res_sql = col_sql.query(query_embeddings=[query_embedding], n_results=k)
-        if res_sql and res_sql['documents'][0]:
-            return "\n\n".join(res_sql['documents'][0])
+        
+        # Optimizer: If the database is small, include EVERYTHING to ensure 100% accuracy
+        count = col_sql.count()
+        if count <= 15:
+            res_sql = col_sql.get()
+            if res_sql and res_sql['documents']:
+                return "\n\n".join(res_sql['documents'])
+        else:
+            # For larger databases, fall back to RAG (Top K)
+            res_sql = col_sql.query(query_embeddings=[query_embedding], n_results=k)
+            if res_sql and res_sql['documents'][0]:
+                return "\n\n".join(res_sql['documents'][0])
     except Exception:
         pass
 
     return "No relevant database schema found."
 
-def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5) -> str:
+def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5, base_url: str = None) -> str:
     """
     Search ChromaDB for relevant business logic/documentation (JSON, CSV, SQL).
     Targets the 'document' or 'knowledge_base' collection.
     """
     client = get_chroma_client()
-    embed_model = get_embed_model()
+    embed_model = get_embed_model(base_url=base_url)
     query_embedding = embed_model.embed_query(query)
     
     # We check all possible collection names for backward compatibility and coverage
@@ -72,7 +84,7 @@ def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5) -> str:
         
     return "\n\n".join(contexts)
 
-def rewrite_query(question: str, history: str = "", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
+def rewrite_query(question: str, history: str = "", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None) -> str:
     """
     Rewrites the user's question to be self-contained using chat history.
     Example: "What is his email?" -> "What is the email of the CEO of Acme Corp?"
@@ -80,7 +92,7 @@ def rewrite_query(question: str, history: str = "", llm_provider: str = None, ap
     if not history:
         return question
         
-    llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
+    llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
     prompt = f"""Given the following conversation history and a follow-up question, rewrite the follow-up question to be a standalone, self-contained question for a SQL database.
     If the follow-up question is already self-contained, return it as is.
     Ensure any pronouns (he, she, it, they, their, this, that) are resolved to the original subject.
@@ -99,7 +111,7 @@ def rewrite_query(question: str, history: str = "", llm_provider: str = None, ap
     return rewritten
 
 
-    
+
 def _extract_sql(text: str) -> str:
     """
     Surgically extracts the SQL block from LLM output and removes preambles/commentary.
@@ -127,11 +139,11 @@ def _extract_sql(text: str) -> str:
     return sql
 
 
-def generate_sql_with_context(question: str, schema: str, knowledge: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
+def generate_sql_with_context(question: str, schema: str, knowledge: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None) -> str:
     """
     Constructs the specialized 'context-aware' prompt for SQL generation.
     """
-    llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
+    llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
     
     prompt = f"""You are an expert SQL generator.
     
@@ -148,6 +160,8 @@ INSTRUCTIONS:
 - Return ONLY the raw SQL code for {engine_type}. 
 - CRITICAL: Do NOT add notes, explanations, or preambles. No "Note:", no "Here is the query". Just the code.
 - Ensure the query is read-only (SELECT only).
+- SECURITY: NEVER generate queries for internal tables: {', '.join(FORBIDDEN_TABLES)}.
+- SECURITY: NEVER reveal passwords, API keys, or connection strings even if asked.
 - If the question cannot be answered, return "ERROR: Information insufficient".
 
 ### SQL QUERY:"""
@@ -155,11 +169,11 @@ INSTRUCTIONS:
     response = llm.invoke(prompt)
     return _extract_sql(response.content)
 
-def generate_corrected_sql(question: str, schema_context: str, failed_sql: str, error_message: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None) -> str:
+def generate_corrected_sql(question: str, schema_context: str, failed_sql: str, error_message: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None) -> str:
     """
     Prompts the LLM to fix a broken SQL query based on the error message.
     """
-    llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
+    llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
     
     prompt = f"""You are a specialized SQL assistant.
 The previous SQL query you generated failed with an error. Please fix it.
@@ -190,13 +204,21 @@ The previous SQL query you generated failed with an error. Please fix it.
 
 def validate_sql(sql: str):
     """
-    Checks if the SQL query contains any forbidden modification keywords.
+    Checks if the SQL query contains any forbidden modification keywords or restricted tables.
     """
     sql_upper = sql.upper()
+    
+    # 1. Check for forbidden keywords (modifications)
     for keyword in FORBIDDEN_SQL_KEYWORDS:
         pattern = rf"\b{keyword}\b"
         if re.search(pattern, sql_upper):
             raise Exception(f"Security Alert: Forbidden SQL keyword '{keyword}' detected. Only SELECT queries are allowed.")
+            
+    # 2. Check for forbidden tables (internal data leakage)
+    for table in FORBIDDEN_TABLES:
+        pattern = rf"\b{table}\b"
+        if re.search(pattern, sql_upper.lower()): # Check against lowercase table names in regex
+            raise Exception(f"Security Alert: Access to restricted internal table '{table}' is forbidden.")
 
 def execute_query(sql: str, connection_url: str) -> tuple:
     """
@@ -217,7 +239,7 @@ def execute_query(sql: str, connection_url: str) -> tuple:
         raise Exception(f"SQL execution failed: {str(e)}")
 
 
-def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, history: str = ""):
+def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None, history: str = ""):
     """
     Enhanced pipeline:
     1. Retrieve relevant DB schema
@@ -226,11 +248,11 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
     4. Execute with retry loop
     """
     # 0. Context check & rewrite
-    rewritten_question = rewrite_query(question, history, llm_provider, api_key, model)
+    rewritten_question = rewrite_query(question, history, llm_provider, api_key, model, base_url)
     
     # 1 & 2. Retrieve context
-    schema = retrieve_relevant_schema(rewritten_question, tenant_id, k=6)
-    knowledge = retrieve_knowledge_base(rewritten_question, tenant_id, k=5)
+    schema = retrieve_relevant_schema(rewritten_question, tenant_id, k=6, base_url=base_url)
+    knowledge = retrieve_knowledge_base(rewritten_question, tenant_id, k=5, base_url=base_url)
     
     # 3. Generate SQL
     sql = generate_sql_with_context(
@@ -240,7 +262,8 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
         engine_type=db_type,
         llm_provider=llm_provider,
         api_key=api_key,
-        model=model
+        model=model,
+        base_url=base_url
     )
     
     if sql.startswith("ERROR"):
@@ -257,12 +280,42 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
         try:
             final_sql, data, df = execute_query(sql, db_url)
             
+            # Dynamic data sampling for summarization
+            total_rows = len(df)
+            total_cols = len(df.columns)
+            
+            if total_rows <= 200:
+                sample_data = data
+                sample_info = f"Showing all {total_rows} rows."
+            else:
+                # For very large datasets, we send a 100-row sample to avoid context limits
+                sample_data = data[:100]
+                sample_info = f"Showing a sample of the first 100 out of {total_rows} total rows."
+
             # Final Answer formatting
-            llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
-            summary_prompt = f"The user asked: {rewritten_question}\nThe SQL used was: {final_sql}\nThe resulting data is: {data[:5]}\n\nPlease provide a very brief summary of these results (1 sentence)."
+            llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
+            summary_prompt = f"""
+            The user asked: {rewritten_question}
+            SQL used: {final_sql}
+            
+            RESULT METADATA:
+            - Total Rows: {total_rows}
+            - Total Columns: {total_cols}
+            - Data Content: {sample_info}
+            
+            DATA (JSON):
+            {sample_data}
+            
+            INSTRUCTIONS:
+            Provide a very brief (1-2 sentences) natural language summary of these results. 
+            - IMPORTANT: You MUST reference the total number of records ({total_rows}) in your summary.
+            - If there are many rows, summarize the overall findings instead of listing individuals.
+            - SECURITY: NEVER mention API keys, passwords, or database secrets in this summary.
+            - Keep the tone helpful and concise.
+            """
             summary = llm.invoke(summary_prompt).content
             
-            return summary, final_sql, data
+            return summary.strip(), final_sql, data
 
         except Exception as e:
             last_error = str(e)
@@ -281,7 +334,8 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
                     engine_type=db_type,
                     llm_provider=llm_provider,
                     api_key=api_key,
-                    model=model
+                    model=model,
+                    base_url=base_url
                 )
                 if sql.startswith("ERROR"):
                     break

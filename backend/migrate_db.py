@@ -221,8 +221,6 @@ def migrate(source_url: str, target_url: str) -> None:
                 # Use the target table's insert() for fully dialect-safe inserts.
                 # This avoids the PyMySQL "dict cannot be used as parameter" error
                 # that occurs when using raw text() with a list of dicts.
-                tgt_table = target_engine.connect()
-                # Get the reflected table from the target
                 tgt_meta_ref = MetaData()
                 tgt_meta_ref.reflect(bind=target_engine)
                 if table_name in tgt_meta_ref.tables:

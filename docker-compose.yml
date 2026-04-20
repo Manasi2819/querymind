@@ -1,70 +1,197 @@
-version: "3.9"
+# ══════════════════════════════════════════════════════════════════════════════
+#  QueryMind — Full Docker Compose Stack
+#  One file. All services. Zero external dependencies.
+#
+#  Services:
+#    mysql       → Metadata database (replaces local MySQL)
+#    redis       → Task queue / caching (reserved for future Celery)
+#    chromadb    → Vector store (ChromaDB server — optional; backend also uses
+#                  PersistentClient via shared volume for zero-copy speed)
+#    ollama      → Local LLM runtime (CPU-only)
+#    ollama-init → One-shot model puller (runs once, then exits)
+#    backend     → FastAPI application
+#    frontend    → React app served by Nginx (reverse proxy to backend)
+#
+#  Quick start:
+#    1. Copy .env.example to .env and fill in your secrets
+#    2. docker compose up --build -d
+#    3. Open http://localhost
+# ══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  querymind_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  chroma_data:
+  ollama_data:
+  uploads_data:
 
 services:
-  # Metadata Database (Managed by backend via SQLAlchemy)
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: querymind
-      POSTGRES_USER: querymind_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
 
-  # Vector Database (Required for Knowledge Base and RAG)
+  # ── 1. Metadata Database ────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: querymind-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-queryminddb}
+      MYSQL_USER: ${MYSQL_USER:-querymind_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - querymind_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # MySQL port NOT exposed externally — internal traffic only
+
+  # ── 2. Redis (Task Queue / Cache) ───────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: querymind-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./redis_data:/data
+    networks:
+      - querymind_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # Redis NOT exposed externally
+
+  # ── 3. ChromaDB Vector Store ────────────────────────────────────────────────
+  #  Note: Backend uses PersistentClient (file-based) via the shared
+  #  chroma_data volume for zero-latency embedding lookups.
+  #  This ChromaDB server is available for future HTTP-mode switching.
   chromadb:
     image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
+    container_name: querymind-chromadb
+    restart: unless-stopped
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
     volumes:
       - chroma_data:/chroma/chroma
+    networks:
+      - querymind_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
-  # Backend API (FastAPI)
-  backend:
-    build: 
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file: .env
-    environment:
-      - DATABASE_URL=postgresql+psycopg2://querymind_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/querymind
-      - CHROMA_PERSIST_DIR=/app/chroma_db
-      - OLLAMA_BASE_URL=http://ollama:11434
-    depends_on:
-      - postgres
-      - chromadb
-      - ollama
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./uploads:/app/uploads
-      - ./chroma_db:/app/chroma_db
-
-  # Local AI Engine (CPU Mode)
+  # ── 4. Ollama — Local LLM Runtime (CPU-only) ────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: querymind-ollama
-    ports:
-      - "11434:11434"
+    restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
+    networks:
+      - querymind_net
+    ports:
+      - "11434:11434"        # Exposed so you can also run `ollama` CLI locally
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 20s
 
-  # Frontend Admin Panel (Vite + React)
+  # ── 5. Ollama Model Initializer (runs once, pulls required models) ──────────
+  ollama-init:
+    image: curlimages/curl:latest
+    container_name: querymind-ollama-init
+    restart: "no"            # One-shot: exits after models are pulled
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - querymind_net
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "⏳ Pulling Ollama models..."
+        curl -sf -X POST http://ollama:11434/api/pull \
+          -H 'Content-Type: application/json' \
+          -d '{"name":"${OLLAMA_MODEL:-llama3.2:3b}"}' && \
+        echo "✅ LLM model pulled." || echo "⚠️  LLM pull failed (may already exist)"
+
+        curl -sf -X POST http://ollama:11434/api/pull \
+          -H 'Content-Type: application/json' \
+          -d '{"name":"${OLLAMA_EMBED_MODEL:-nomic-embed-text}"}' && \
+        echo "✅ Embed model pulled." || echo "⚠️  Embed pull failed (may already exist)"
+
+        echo "🎉 ollama-init complete."
+
+  # ── 6. FastAPI Backend ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: querymind-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override localhost references with Docker service hostnames
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-querymind_user}:${MYSQL_PASSWORD:-changeme}@mysql:3306/${MYSQL_DATABASE:-queryminddb}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_PERSIST_DIR=/app/chroma_db
+      - REDIS_URL=redis://redis:6379/0
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+      - chroma_data:/app/chroma_db    # Shared with ChromaDB container
+    networks:
+      - querymind_net
+    ports:
+      - "8000:8000"                   # Exposed for direct API testing / Swagger UI
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ── 7. React Frontend (Nginx) ────────────────────────────────────────────────
   frontend:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "80:80"
-    environment:
-      - VITE_API_URL=/
+      args:
+        - VITE_API_URL=/
+    container_name: querymind-frontend
+    restart: unless-stopped
     depends_on:
-      - backend
-
-volumes:
-  postgres_data:
-  chroma_data:
-  ollama_data:
+      backend:
+        condition: service_healthy
+    networks:
+      - querymind_net
+    ports:
+      - "80:80"                       # Main entry point for the web UI
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3

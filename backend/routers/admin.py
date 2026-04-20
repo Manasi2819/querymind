@@ -9,7 +9,8 @@ from auth import create_access_token, verify_token, verify_password, get_passwor
 from models.schemas import DBConfig, LLMConfig, TokenResponse, UserRegistration
 from models.db_models import AdminUser, AdminSettings, UploadedFile
 from services.database_connection import test_connection
-from services.encryption import encrypt_db_url, decrypt_db_url
+from services.encryption import encrypt_secret, decrypt_secret
+from services.sql_metadata_service import index_db_metadata
 from config import get_settings
 from database import get_db
 
@@ -49,7 +50,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 
 @router.post("/db-config")
 async def save_db_config(config: DBConfig, fetch_schema: bool = True, token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
-    from services.sql_metadata_service import index_db_metadata
     
     user_id = token_data.get("user_id")
     
@@ -66,9 +66,9 @@ async def save_db_config(config: DBConfig, fetch_schema: bool = True, token_data
         db.add(admin_settings)
     
     db_data = config.model_dump()
-    db_data["url"] = encrypt_db_url(config.connection_url)
+    db_data["url"] = encrypt_secret(config.connection_url)
     if db_data.get("password"):
-        db_data["password"] = encrypt_db_url(db_data["password"])
+        db_data["password"] = encrypt_secret(db_data["password"])
         
     admin_settings.db_config = db_data
     db.commit()
@@ -76,7 +76,9 @@ async def save_db_config(config: DBConfig, fetch_schema: bool = True, token_data
     msg = "Database configured."
     if fetch_schema:
         # Use user_id as tenant_id for isolation
-        count = index_db_metadata(config.connection_url, tenant_id=f"user_{user_id}")
+        # Get LLM config to use for interpreting schema
+        llm_cfg = get_llm_cfg(db_session=db, user_id=user_id)
+        count = index_db_metadata(config.connection_url, tenant_id=f"user_{user_id}", llm_config=llm_cfg)
         msg += f" Auto-fetched and indexed {count} tables for RAG."
         
     return {"message": msg, "tables": result["tables"]}
@@ -109,7 +111,7 @@ async def get_stats(token_data: dict = Depends(verify_token), db: Session = Depe
         enc_url = cfg.get("url")
         if enc_url:
             try:
-                url = decrypt_db_url(enc_url)
+                url = decrypt_secret(enc_url)
                 # If database field is missing (e.g. direct URL), extract from URL
                 if not db_name:
                     db_name = url.split("/")[-1].split("?")[0]
@@ -190,7 +192,7 @@ async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_t
         # If switching TO ollama, we should clear cloud-specific keys
         if new_provider == "ollama":
             current_cfg = {"provider": "ollama"} # Reset and only use new provider
-            # If model isn't provided, get_llm will use default from settings (phi3:mini)
+            # If model isn't provided, get_llm will use default from settings (llama3.2:3b)
         else:
             # Switching between cloud providers, still probably better to reset 
             # or at least clear the API key and model if they aren't in incoming
@@ -201,23 +203,40 @@ async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_t
     
     # Encrypt API key if present
     if "api_key" in current_cfg and current_cfg["api_key"]:
-        # Only encrypt if it's not already encrypted (naive check: cloud keys usually start with sk- or similar)
-        # or if it's coming from the frontend (which it is here)
-        current_cfg["api_key"] = encrypt_db_url(current_cfg["api_key"])
+        # SANITIZATION: Strip any extra text/whitespace from the key
+        # Many users accidentally paste "openai key: sk-..." or have trailing spaces
+        key = str(current_cfg["api_key"]).strip()
+        # If it contains spaces (like "grok key - gsk_..."), try to extract just the token
+        if " " in key:
+            # Common pattern is to split by space and take the last part that looks like a key
+            parts = key.split()
+            for part in parts:
+                if part.startswith(("sk-", "gsk_", "AIza")): # Common prefixes
+                    key = part
+                    break
+        
+        current_cfg["api_key"] = encrypt_secret(key)
         
     admin_settings.llm_config = current_cfg
     db.commit()
-    return {"message": "LLM provider updated", "provider": admin_settings.llm_config.get("provider")}
+    return {"message": "LLM provider updated", "provider": admin_settings.llm_config.get("provider"), "base_url": admin_settings.llm_config.get("base_url")}
 
 @router.get("/llm-config")
 async def get_llm_config(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    from services.llm_service import RETIRED_MODELS_MAP
+    
     user_id = token_data.get("user_id")
     admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
     
     if not admin_settings or not admin_settings.llm_config:
-        return {"provider": settings.llm_provider} # Default from env
+        return {"provider": settings.llm_provider, "model": settings.ollama_model, "base_url": settings.ollama_base_url}
         
     safe = {k: v for k, v in admin_settings.llm_config.items() if k != "api_key"}
+    
+    # Auto-map decommissioned models on retrieval so UI shows the correct replacement
+    if safe.get("model") in RETIRED_MODELS_MAP:
+        safe["model"] = RETIRED_MODELS_MAP[safe["model"]]
+        
     return safe
 
 @router.post("/upload")
@@ -249,7 +268,7 @@ def get_db_url(db_session: Session = None, user_id: int = 1) -> str:
         enc_url = settings.db_config.get("url", "")
         if enc_url:
             try:
-                return decrypt_db_url(enc_url)
+                return decrypt_secret(enc_url)
             except Exception:
                 return enc_url # backward-compatible fallback if previously plain text
     return ""
@@ -260,14 +279,14 @@ def get_db_type(db_session: Session = None, user_id: int = 1) -> str:
     return settings.db_config.get("db_type", "mysql") if settings and settings.db_config else "mysql"
 
 def get_llm_cfg(db_session: Session = None, user_id: int = 1) -> dict:
-    if not db_session: return {"provider": settings.llm_provider}
+    if not db_session: return {"provider": settings.llm_provider, "model": settings.ollama_model, "base_url": settings.ollama_base_url}
     as_ = db_session.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
-    cfg = as_.llm_config.copy() if as_ and as_.llm_config else {"provider": settings.llm_provider}
+    cfg = as_.llm_config.copy() if as_ and as_.llm_config else {"provider": settings.llm_provider, "model": settings.ollama_model, "base_url": settings.ollama_base_url}
     
     # Decrypt API key safely, with plain-text fallback for backward compatibility
     if "api_key" in cfg and cfg["api_key"]:
         try:
-            cfg["api_key"] = decrypt_db_url(cfg["api_key"])
+            cfg["api_key"] = decrypt_secret(cfg["api_key"])
         except Exception:
             pass
             

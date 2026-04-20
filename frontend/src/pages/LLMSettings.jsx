@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { getLLMConfig, setLLMConfig } from '../api/client'
 
 const MODEL_MAP = {
-  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
-  anthropic: ['claude-3-haiku-20240307', 'claude-3-5-sonnet-20241022'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'o1-preview', 'o1-mini', 'gpt-4-turbo'],
+  anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
   gemini: ['gemini-1.5-flash', 'gemini-1.5-pro'],
-  groq: ['llama-3.1-8b-instant', 'llama-3.1-70b-versatile', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it']
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192', 'llama3-8b-8192', 'gemma2-9b-it']
 }
 
 export default function LLMSettings() {
@@ -13,6 +13,8 @@ export default function LLMSettings() {
   const [provider, setProvider] = useState('openai')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('gpt-4o-mini')
+  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434')
+  const [ollamaModel, setOllamaModel] = useState('llama3.2')
   const [showKey, setShowKey] = useState(false)
   const [loading, setLoading] = useState(false)
   const [ollamaLoading, setOllamaLoading] = useState(false)
@@ -22,6 +24,18 @@ export default function LLMSettings() {
     try {
       const data = await getLLMConfig()
       setCurrentConfig(data)
+      if (data.provider === 'ollama') {
+        if (data.base_url) setOllamaUrl(data.base_url)
+        if (data.model) setOllamaModel(data.model)
+      } else if (data.provider) {
+        setProvider(data.provider)
+        const validModels = MODEL_MAP[data.provider] || []
+        if (data.model && validModels.includes(data.model)) {
+          setModel(data.model)
+        } else if (validModels.length > 0) {
+          setModel(validModels[0])
+        }
+      }
     } catch {
       setCurrentConfig(null)
     }
@@ -34,12 +48,13 @@ export default function LLMSettings() {
     setModel(MODEL_MAP[p][0])
   }
 
-  const handleOllama = async () => {
+  const handleOllama = async (e) => {
+    if (e) e.preventDefault()
     setOllamaLoading(true)
     setMessage(null)
     try {
-      await setLLMConfig({ provider: 'ollama', model: 'phi3:mini' })
-      setMessage({ type: 'success', text: '✅ Switched to Ollama phi3:mini (local)' })
+      await setLLMConfig({ provider: 'ollama', model: ollamaModel, base_url: ollamaUrl })
+      setMessage({ type: 'success', text: `✅ Switched to Ollama ${ollamaModel} (${ollamaUrl})` })
       await loadConfig()
     } catch (e) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Failed to switch to Ollama' })
@@ -84,18 +99,46 @@ export default function LLMSettings() {
       <div className="llm-cards">
         {/* Local Ollama */}
         <div className="llm-card">
-          <div className="llm-card-title">🏠 Local — Ollama phi3:mini</div>
+          <div className="llm-card-title">🏠 Local — Ollama</div>
           <p className="llm-card-desc">
-            Runs entirely on your machine. <span style={{ color: 'var(--success)' }}>No data sent externally.</span> Requires Ollama to be running locally.
+            Runs entirely on your machine. <span style={{ color: 'var(--success)' }}>No data leaves your environment.</span>
           </p>
-          <button
-            id="use-ollama-btn"
-            className="btn btn-primary btn-full"
-            onClick={handleOllama}
-            disabled={ollamaLoading}
-          >
-            {ollamaLoading ? <><span className="spinner" /> Switching...</> : '🏠 Use Ollama (phi3:mini)'}
-          </button>
+          
+          <form onSubmit={handleOllama}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="ollama-url">Ollama Endpoint</label>
+              <input
+                id="ollama-url"
+                type="text"
+                className="form-input"
+                value={ollamaUrl}
+                onChange={(e) => setOllamaUrl(e.target.value)}
+                placeholder="http://localhost:11434"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="ollama-model">Model Name</label>
+              <input
+                id="ollama-model"
+                type="text"
+                className="form-input"
+                value={ollamaModel}
+                onChange={(e) => setOllamaModel(e.target.value)}
+                placeholder="llama3.2"
+              />
+              <p className="form-help">Ensure you have run <code>ollama pull {ollamaModel}</code> first.</p>
+            </div>
+
+            <button
+              id="use-ollama-btn"
+              type="submit"
+              className="btn btn-primary btn-full"
+              disabled={ollamaLoading}
+            >
+              {ollamaLoading ? <><span className="spinner" /> Switching...</> : '🏠 Save & Use Ollama'}
+            </button>
+          </form>
         </div>
 
         {/* Cloud API */}

@@ -27,10 +27,12 @@ htmlcov/
 
 # Environments
 .env
-.env.*
+.env.docker
 .venv
 venv/
 ENV/
+# Exception: keep the example template
+!.env.example
 
 # Databases & Storage
 *.db
@@ -65,3 +67,17 @@ Thumbs.db
 *.log
 backend/pytest_errors.txt
 backend/pytest_errors_utf8.txt
+
+# Docker runtime data
+redis_data/
+ollama_data/
+
+# Backend upload storage (user data — never commit)
+backend/uploads/
+
+# Tools and test local outputs
+backend/tools/__pycache__/
+backend/tests/__pycache__/
+
+# Implementation plan files
+implementation_plan_*.md

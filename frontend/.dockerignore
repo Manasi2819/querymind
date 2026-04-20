@@ -1,42 +1,23 @@
 # ══════════════════════════════════════════════════════════════════════════════
-#  QueryMind Backend — .dockerignore
-#  Prevents large/sensitive files from entering the Docker build context.
+#  QueryMind Frontend — .dockerignore
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Python artifacts
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info/
+# Node.js artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output (generated inside the container)
 dist/
-build/
-.eggs/
+.vite/
+.eslintcache
 
-# Test & dev
-.pytest_cache/
-pytest_errors.txt
-pytest_errors_utf8.txt
-.coverage
-htmlcov/
-.mypy_cache/
-
-# Secrets & local config
+# Environment files (not needed in Docker — env is set via compose)
 .env
 .env.*
-
-# Runtime data (handled via named volumes)
-chroma_db/
-uploads/
-*.db
-*.sqlite
-*.sqlite3
-querymind_metadata.db
-
-# Scratch files
-scratch/
+.env.local
+.env.development
 
 # OS artifacts
 .DS_Store

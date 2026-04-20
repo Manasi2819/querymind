@@ -9,6 +9,7 @@ from services.rag_service import answer_from_docs
 from models import db_models as models
 from routers.admin import get_db_url, get_llm_cfg, get_db_type
 from services.sql_rag_service import FORBIDDEN_SQL_KEYWORDS
+from services.redaction_service import redact_secrets
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -34,6 +35,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     provider = llm_cfg.get("provider", "ollama")
     api_key = llm_cfg.get("api_key")
     selected_model = llm_cfg.get("model")
+    base_url = llm_cfg.get("base_url")
 
     db_url = get_db_url(db_session=db, user_id=user_id)
     db_type = get_db_type(db_session=db, user_id=user_id)
@@ -70,6 +72,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         provider=provider, 
         api_key=api_key, 
         model=selected_model, 
+        base_url=base_url,
         history=history_str
     )
 
@@ -89,6 +92,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         if intent == "unauthorized":
             answer = "I cannot do that action, I can only fetch data and show it."
             source = "system"
+            answer = redact_secrets(answer)
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, None, None, source)
             return ChatResponse(answer=answer, source=source, session_id=session_id)
@@ -104,24 +108,28 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 llm_provider=provider,
                 api_key=api_key,
                 model=selected_model,
+                base_url=base_url,
                 history=history_str
             )
             source = "sql"
+            answer = redact_secrets(answer)
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, sql, data, source)
             return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":
-            answer = answer_from_docs(question, tenant_id, "general_document", provider, api_key, history=history_str, model=selected_model)
+            answer = answer_from_docs(question, tenant_id, "general_document", provider, api_key, history=history_str, model=selected_model, base_url=base_url)
             source = "rag"
+            answer = redact_secrets(answer)
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, None, None, source)
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
         else:
             # chat intent or default fallback
-            answer = "I don't have answer to that."
+            answer = "I'm sorry, I can only answer questions about your connected database or uploaded documents."
             source = "chat"
+            answer = redact_secrets(answer)
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, None, None, source)
             return ChatResponse(answer=answer, source=source, session_id=session_id)
@@ -135,11 +143,16 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             friendly_detail = f"LLM Error: The model '{selected_model}' was not found by {provider}. Please check your configuration or pull the model if using Ollama."
         elif "api_key" in error_msg.lower() or "authentication" in error_msg.lower():
             friendly_detail = f"LLM Error: Authentication failed for {provider}. Please check your API key."
+        elif "illegal header" in error_msg.lower() or "protocolerror" in error_msg.lower():
+            friendly_detail = f"LLM Error: Invalid API key format for {provider}. Please ensure the key does not contain illegal characters or extra spaces."
         elif "ImportError" in error_msg or "requires" in error_msg:
             friendly_detail = f"System Error: {error_msg}"
         else:
             friendly_detail = error_msg
 
+        # Redact secrets from error messages before raising
+        friendly_detail = redact_secrets(friendly_detail)
+        
         raise HTTPException(status_code=500, detail=friendly_detail)
 
 @router.get("/health")

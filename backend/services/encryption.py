@@ -12,19 +12,27 @@ def get_fernet() -> Fernet:
         raise ValueError("FERNET_KEY is not configured in environment variables.")
     return Fernet(settings.fernet_key.encode('utf-8'))
 
-def encrypt_db_url(url: str) -> str:
-    """Encrypts a plaintext database URL."""
-    if not url:
-        return url
-    f = get_fernet()
-    return f.encrypt(url.encode('utf-8')).decode('utf-8')
-
-def decrypt_db_url(encrypted: str) -> str:
-    """Decrypts an encrypted database URL."""
-    if not encrypted:
-        return encrypted
+def encrypt_secret(plain_text: str) -> str:
+    """Encrypts a plaintext secret using Fernet."""
+    if not plain_text:
+        return plain_text
     try:
         f = get_fernet()
-        return f.decrypt(encrypted.encode('utf-8')).decode('utf-8')
+        return f.encrypt(plain_text.encode('utf-8')).decode('utf-8')
     except Exception:
-        return encrypted
+        return plain_text
+
+def decrypt_secret(encrypted_text: str) -> str:
+    """Decrypts an encrypted secret. Falls back to original text if decryption fails."""
+    if not encrypted_text:
+        return encrypted_text
+    try:
+        f = get_fernet()
+        return f.decrypt(encrypted_text.encode('utf-8')).decode('utf-8')
+    except Exception:
+        # Fallback for plain-text legacy data or malformed strings
+        return encrypted_text
+
+# Backward-compatible aliases
+encrypt_db_url = encrypt_secret
+decrypt_db_url = decrypt_secret

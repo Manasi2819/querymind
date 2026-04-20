@@ -7,7 +7,6 @@ settings = get_settings()
 
 def get_vector_store(collection_name: str) -> Chroma:
     """Returns a Chroma vector store for the given collection."""
-    # Using local PersistentClient because Docker is not available in the current environment
     client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
     return Chroma(
         client=client,
@@ -41,7 +40,6 @@ def similarity_search(query: str, collection_name: str, k: int = 4, filter_dict:
 
 def delete_collection(collection_name: str):
     """Deletes all vectors in a collection (called when files are re-uploaded)."""
-    # Using local PersistentClient instead of Docker-based HttpClient
     client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
     try:
         client.delete_collection(collection_name)

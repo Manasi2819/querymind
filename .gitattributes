@@ -1,0 +1,55 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  QueryMind — .gitattributes
+#  Enforces Unix LF line endings for shell scripts and Docker files,
+#  preventing CRLF issues that break container startup scripts on Windows.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Default: auto normalize line endings
+* text=auto
+
+# Shell scripts MUST use LF (CRLF breaks "#!/bin/sh" shebang in containers)
+*.sh text eol=lf
+
+# Docker files: LF
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+docker-compose*.yml text eol=lf
+
+# Nginx config: LF
+*.conf text eol=lf
+
+# Python source: LF
+*.py text eol=lf
+
+# Makefile: uses tabs — preserve exactly
+Makefile text eol=lf
+
+# JSON / YAML / TOML: LF
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+
+# Markdown and text docs
+*.md text eol=lf
+*.txt text eol=lf
+
+# Windows-style keepouts — these files stay as-is
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files — no line ending transformation
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.db binary
+*.sqlite binary

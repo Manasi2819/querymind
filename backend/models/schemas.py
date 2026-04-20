@@ -14,6 +14,7 @@ class LLMConfig(BaseModel):
     provider: LLMProvider
     api_key: Optional[str] = None
     model: Optional[str] = None
+    base_url: Optional[str] = None
 
 class DBConfig(BaseModel):
     url: Optional[str] = None  # Direct connection URL

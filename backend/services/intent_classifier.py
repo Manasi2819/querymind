@@ -19,7 +19,7 @@ FORBIDDEN_INTENT_KEYWORDS = [
     "delete", "drop", "truncate", "update", "insert", "alter", "create", "modify", "remove", "change", "set", "clear"
 ]
 
-def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str = None, api_key: str = None, model: str = None, history: str = "") -> str:
+def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str = None, api_key: str = None, model: str = None, base_url: str = None, history: str = "") -> str:
     """
     Returns: 'sql_with_context' | 'rag' | 'chat' | 'unauthorized'
     Uses LLM for smart routing if provider is given, falling back to keywords.
@@ -27,7 +27,7 @@ def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str =
     if provider:
         try:
             from services.llm_service import get_llm
-            llm = get_llm(provider=provider, api_key=api_key, model=model)
+            llm = get_llm(provider=provider, api_key=api_key, model=model, base_url=base_url)
             
             prompt = f"""You are an intent classifier for an enterprise database assistant.
 You must classify the user's latest question into one of four categories:

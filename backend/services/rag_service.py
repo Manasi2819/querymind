@@ -13,7 +13,8 @@ def answer_from_docs(
     llm_provider: str = None,
     api_key: str = None,
     history: str = "",
-    model: str = None
+    model: str = None,
+    base_url: str = None
 ) -> str:
     """Retrieves context from vector store and answers with LLM, considering chat history."""
     try:
@@ -43,7 +44,7 @@ def answer_from_docs(
 
         # Rerank/Limit total docs (simple top 6 for now)
         docs = all_docs[:6]
-        llm = get_llm(provider=llm_provider, api_key=api_key, model=model)
+        llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
 
         template = """You are a helpful enterprise assistant. Use the following retrieved context and conversation history to answer the question.
         CRITICAL: If the answer is NOT in the context, just say you don't know. Do NOT use outside general knowledge.

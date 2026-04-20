@@ -6,12 +6,12 @@ class Settings(BaseSettings):
     # ── LLM ───────────────────────────────────────────────────────────────
     llm_provider: str = "ollama"           # "ollama" | "openai" | "anthropic" | "gemini" | "groq"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "phi3:mini"
+    ollama_model: str = "llama3.2:3b"
     ollama_embed_model: str = "nomic-embed-text"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-haiku-20240307"
+    anthropic_model: str = "claude-3-5-haiku-20241022"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-1.5-flash"
     groq_api_key: str = ""
@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = (".env", "../.env")
+        extra = "ignore"
 
 
 @lru_cache

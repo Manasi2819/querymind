@@ -1,47 +1,45 @@
 # ══════════════════════════════════════════════════════════════════════════════
-#  QueryMind Backend — .dockerignore
-#  Prevents large/sensitive files from entering the Docker build context.
+#  QueryMind — Root .dockerignore
+#  Applied to the root build context (if you ever build from root).
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Python artifacts
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-.eggs/
+# Python
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+backend/*.db
+backend/chroma_db/
+backend/uploads/
+backend/scratch/
 
-# Test & dev
-.pytest_cache/
-pytest_errors.txt
-pytest_errors_utf8.txt
-.coverage
-htmlcov/
-.mypy_cache/
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 
-# Secrets & local config
+# Git
+.git/
+.gitignore
+
+# Secrets
 .env
 .env.*
+*.env
 
-# Runtime data (handled via named volumes)
-chroma_db/
-uploads/
-*.db
-*.sqlite
-*.sqlite3
-querymind_metadata.db
-
-# Scratch files
-scratch/
-
-# OS artifacts
+# OS
 .DS_Store
 Thumbs.db
 
 # IDE
 .vscode/
 .idea/
+
+# Logs
+*.log
+
+# Runtime data (volumes handle these)
+chroma_db/
+uploads/
+redis_data/
+ollama_data/
