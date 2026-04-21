@@ -10,23 +10,30 @@ const MODEL_MAP = {
 
 export default function LLMSettings() {
   const [currentConfig, setCurrentConfig] = useState(null)
+  
+  // Cloud API state
   const [provider, setProvider] = useState('openai')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('gpt-4o-mini')
-  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434')
-  const [ollamaModel, setOllamaModel] = useState('llama3.2')
   const [showKey, setShowKey] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [ollamaLoading, setOllamaLoading] = useState(false)
+
+  // Custom Endpoint state
+  const [endpointUrl, setEndpointUrl] = useState('')
+  const [endpointModel, setEndpointModel] = useState('')
+  const [endpointKey, setEndpointKey] = useState('')
+  const [showEndpointKey, setShowEndpointKey] = useState(false)
+  const [endpointLoading, setEndpointLoading] = useState(false)
+
   const [message, setMessage] = useState(null) // { type, text }
 
   const loadConfig = async () => {
     try {
       const data = await getLLMConfig()
       setCurrentConfig(data)
-      if (data.provider === 'ollama') {
-        if (data.base_url) setOllamaUrl(data.base_url)
-        if (data.model) setOllamaModel(data.model)
+      if (data.provider === 'endpoint' || data.provider === 'ollama') {
+        if (data.base_url) setEndpointUrl(data.base_url)
+        if (data.model) setEndpointModel(data.model)
       } else if (data.provider) {
         setProvider(data.provider)
         const validModels = MODEL_MAP[data.provider] || []
@@ -48,18 +55,23 @@ export default function LLMSettings() {
     setModel(MODEL_MAP[p][0])
   }
 
-  const handleOllama = async (e) => {
+  const handleEndpointSave = async (e) => {
     if (e) e.preventDefault()
-    setOllamaLoading(true)
+    if (!endpointUrl.trim() || !endpointModel.trim()) {
+      setMessage({ type: 'error', text: 'Endpoint URL and Model are required' })
+      return
+    }
+    setEndpointLoading(true)
     setMessage(null)
     try {
-      await setLLMConfig({ provider: 'ollama', model: ollamaModel, base_url: ollamaUrl })
-      setMessage({ type: 'success', text: `✅ Switched to Ollama ${ollamaModel} (${ollamaUrl})` })
+      await setLLMConfig({ provider: 'endpoint', model: endpointModel, base_url: endpointUrl, api_key: endpointKey })
+      setMessage({ type: 'success', text: `✅ Switched to Custom Endpoint` })
       await loadConfig()
+      setEndpointKey('') // Clear key field after save
     } catch (e) {
-      setMessage({ type: 'error', text: e?.response?.data?.detail || 'Failed to switch to Ollama' })
+      setMessage({ type: 'error', text: e?.response?.data?.detail || 'Failed to save endpoint config' })
     } finally {
-      setOllamaLoading(false)
+      setEndpointLoading(false)
     }
   }
 
@@ -75,6 +87,7 @@ export default function LLMSettings() {
       await setLLMConfig({ provider, api_key: apiKey, model })
       setMessage({ type: 'success', text: `✅ Switched to ${provider} / ${model}` })
       await loadConfig()
+      setApiKey('') // Clear key field after save
     } catch (e) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Failed to save config' })
     } finally {
@@ -86,7 +99,7 @@ export default function LLMSettings() {
     <div>
       <div className="page-header">
         <h1 className="page-title">LLM Provider Configuration</h1>
-        <p className="page-subtitle">Choose between a local Ollama model (free, private) or a cloud API key.</p>
+        <p className="page-subtitle">Choose between a Custom LLM Endpoint or a Cloud API Provider.</p>
       </div>
 
       {message && (
@@ -97,53 +110,69 @@ export default function LLMSettings() {
       )}
 
       <div className="llm-cards">
-        {/* Local Ollama */}
+        {/* Custom Endpoint */}
         <div className="llm-card">
-          <div className="llm-card-title">🏠 Local — Ollama</div>
+          <div className="llm-card-title">🔗 Custom LLM Endpoint</div>
           <p className="llm-card-desc">
-            Runs entirely on your machine. <span style={{ color: 'var(--success)' }}>No data leaves your environment.</span>
+            Use any remote LLM (e.g. OpenAI-compatible server, remote Ollama).
           </p>
           
-          <form onSubmit={handleOllama}>
+          <form onSubmit={handleEndpointSave}>
             <div className="form-group">
-              <label className="form-label" htmlFor="ollama-url">Ollama Endpoint</label>
+              <label className="form-label" htmlFor="endpoint-url">Base URL</label>
               <input
-                id="ollama-url"
+                id="endpoint-url"
                 type="text"
                 className="form-input"
-                value={ollamaUrl}
-                onChange={(e) => setOllamaUrl(e.target.value)}
-                placeholder="http://localhost:11434"
+                value={endpointUrl}
+                onChange={(e) => setEndpointUrl(e.target.value)}
+                placeholder="http://192.168.1.100:11434"
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label" htmlFor="ollama-model">Model Name</label>
+              <label className="form-label" htmlFor="endpoint-model">Model Name</label>
               <input
-                id="ollama-model"
+                id="endpoint-model"
                 type="text"
                 className="form-input"
-                value={ollamaModel}
-                onChange={(e) => setOllamaModel(e.target.value)}
+                value={endpointModel}
+                onChange={(e) => setEndpointModel(e.target.value)}
                 placeholder="llama3.2"
               />
-              <p className="form-help">Ensure you have run <code>ollama pull {ollamaModel}</code> first.</p>
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label" htmlFor="endpoint-api-key">API Key (Optional)</label>
+              <div className="input-wrapper">
+                <input
+                  id="endpoint-api-key"
+                  type={showEndpointKey ? 'text' : 'password'}
+                  className="form-input"
+                  value={endpointKey}
+                  onChange={(e) => setEndpointKey(e.target.value)}
+                  placeholder="Bearer token if required..."
+                />
+                <button type="button" className="input-toggle" onClick={() => setShowEndpointKey(!showEndpointKey)}>
+                  {showEndpointKey ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
 
             <button
-              id="use-ollama-btn"
+              id="save-endpoint-btn"
               type="submit"
               className="btn btn-primary btn-full"
-              disabled={ollamaLoading}
+              disabled={endpointLoading}
             >
-              {ollamaLoading ? <><span className="spinner" /> Switching...</> : '🏠 Save & Use Ollama'}
+              {endpointLoading ? <><span className="spinner" /> Saving...</> : '🔗 Save Custom Endpoint'}
             </button>
           </form>
         </div>
 
         {/* Cloud API */}
         <div className="llm-card">
-          <div className="llm-card-title">☁️ Cloud — API Key</div>
+          <div className="llm-card-title">☁️ Cloud — API Providers</div>
           <form onSubmit={handleCloudSave}>
             <div className="form-group">
               <label className="form-label" htmlFor="llm-provider">Provider</label>
@@ -215,7 +244,11 @@ export default function LLMSettings() {
               {Object.entries(currentConfig).map(([k, v]) => (
                 `  `
               )).join('')}
-              {JSON.stringify(currentConfig, null, 2)}
+              {JSON.stringify({
+                 provider: currentConfig.provider,
+                 model: currentConfig.model,
+                 base_url: currentConfig.base_url
+              }, null, 2)}
             </pre>
           ) : (
             <span style={{ color: '#6b7280' }}>// No config returned from API</span>

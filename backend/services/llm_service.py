@@ -36,16 +36,17 @@ def get_llm(provider: str = None, api_key: str = None, model: str = None, base_u
     if model in RETIRED_MODELS_MAP:
         model = RETIRED_MODELS_MAP[model]
 
-    if provider == "ollama":
+    if provider == "endpoint" or provider == "ollama":
         try:
-            from langchain_ollama import ChatOllama
-            return ChatOllama(
-                base_url=base_url or settings.ollama_base_url,
-                model=model or settings.ollama_model,
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                base_url=base_url or settings.endpoint_base_url,
+                model=model or settings.endpoint_model,
+                api_key=api_key or settings.endpoint_api_key or "sk-dummy-key", # OpenAI SDK requires a string key even if unused by local models
                 temperature=0.1,
             )
         except ImportError:
-            raise ImportError("Ollama provider requires 'langchain-ollama' package. Run: pip install langchain-ollama")
+            raise ImportError("Endpoint provider requires 'langchain-openai' package. Run: pip install langchain-openai")
 
     elif provider == "openai":
         try:
@@ -97,11 +98,13 @@ def get_llm(provider: str = None, api_key: str = None, model: str = None, base_u
 
 def get_embed_model(base_url: str = None):
     """
-    Returns embedding model. Always uses Ollama nomic-embed-text locally
-    (free, no API key needed) unless overridden.
+    Returns embedding model. Uses HuggingFace embeddings locally
+    (free, no API key needed, no external container).
     """
-    from langchain_ollama import OllamaEmbeddings
-    return OllamaEmbeddings(
-        base_url=base_url or settings.ollama_base_url,
-        model=settings.ollama_embed_model,
-    )
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings
+        return HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+    except ImportError:
+        raise ImportError("Embeddings require 'langchain-huggingface' and 'sentence-transformers'.")

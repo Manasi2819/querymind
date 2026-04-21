@@ -4,10 +4,10 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # ── LLM ───────────────────────────────────────────────────────────────
-    llm_provider: str = "ollama"           # "ollama" | "openai" | "anthropic" | "gemini" | "groq"
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
-    ollama_embed_model: str = "nomic-embed-text"
+    llm_provider: str = "openai"           # "endpoint" | "openai" | "anthropic" | "gemini" | "groq"
+    endpoint_base_url: str = ""
+    endpoint_model: str = ""
+    endpoint_api_key: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
@@ -23,9 +23,7 @@ class Settings(BaseSettings):
     # Override via DATABASE_URL environment variable or .env file.
     database_url: str = "sqlite:///./querymind_metadata.db"
 
-    # ── Redis ─────────────────────────────────────────────────────────────
-    redis_url: str = "redis://localhost:6379/0"
-
+    # Redis removed as it is not actively used used for caching or sessions
     # ── Auth ──────────────────────────────────────────────────────────────
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
