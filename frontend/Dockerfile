@@ -26,8 +26,10 @@ RUN npm run build
 # ── Stage 2: Serve ───────────────────────────────────────────────────────────
 FROM nginx:1.27-alpine
 
-# Remove default nginx page
-RUN rm -rf /usr/share/nginx/html/*
+# Remove default nginx page but preserve the 50x Gateway Timeout page
+RUN mv /usr/share/nginx/html/50x.html /tmp/50x.html && \
+    rm -rf /usr/share/nginx/html/* && \
+    mv /tmp/50x.html /usr/share/nginx/html/50x.html
 
 # Custom nginx config (reverse proxy + SPA routing)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
