@@ -25,7 +25,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=128), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=True),
     sa.Column('title', sa.String(length=512), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['admin_users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -54,7 +54,7 @@ def upgrade() -> None:
     sa.Column('sql', sa.Text(), nullable=True),
     sa.Column('data', sa.JSON(), nullable=True),
     sa.Column('source', sa.String(length=64), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
     sa.ForeignKeyConstraint(['session_id'], ['chat_sessions.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

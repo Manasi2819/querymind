@@ -9,6 +9,7 @@ class LLMProvider(str, Enum):
     anthropic = "anthropic"
     gemini = "gemini"
     groq = "groq"
+    endpoint = "endpoint"
 
 class LLMConfig(BaseModel):
     provider: LLMProvider

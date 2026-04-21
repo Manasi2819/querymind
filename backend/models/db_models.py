@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, JSON, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from datetime import datetime
 from database import Base
 
 
@@ -48,8 +49,8 @@ class ChatSession(Base):
     id         = Column(String(128), primary_key=True, index=True)  # UUID or frontend-generated
     user_id    = Column(Integer, ForeignKey("admin_users.id"), index=True)
     title      = Column(String(512), default="New chat")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner    = relationship("AdminUser", back_populates="sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -65,6 +66,6 @@ class ChatMessage(Base):
     sql        = Column(Text,      nullable=True)
     data       = Column(JSON,      nullable=True)
     source     = Column(String(64), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     session = relationship("ChatSession", back_populates="messages")
