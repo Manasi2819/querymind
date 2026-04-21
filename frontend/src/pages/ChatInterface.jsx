@@ -97,10 +97,11 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
           source: data.source || null,
         })
       }
-    } catch {
+    } catch (err) {
+      const errorMessage = err.response?.data?.detail || 'Could not reach the backend. Make sure the API is running on port 8000.';
       onAddMessage(sessionId, {
         role: 'assistant',
-        content: '⚠️ Error: Could not reach the backend. Make sure the API is running on port 8000.',
+        content: `⚠️ Error: ${errorMessage}`,
         source: 'error',
       })
     } finally {

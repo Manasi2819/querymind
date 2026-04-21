@@ -66,7 +66,7 @@ If you chose to run AI locally using the included Ollama service, you must downl
 
 ```powershell
 # Pull the chat model
-docker exec -it querymind-ollama ollama pull phi3:mini
+docker exec -it querymind-ollama ollama pull llama3.2:3b
 
 # Pull the embedding model (required for Knowledge Base)
 docker exec -it querymind-ollama ollama pull nomic-embed-text
