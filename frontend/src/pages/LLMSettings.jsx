@@ -24,6 +24,7 @@ export default function LLMSettings() {
   const [endpointKey, setEndpointKey] = useState('')
   const [showEndpointKey, setShowEndpointKey] = useState(false)
   const [endpointLoading, setEndpointLoading] = useState(false)
+  const [detectedProvider, setDetectedProvider] = useState(null)
 
   const [message, setMessage] = useState(null) // { type, text }
 
@@ -64,7 +65,10 @@ export default function LLMSettings() {
     setEndpointLoading(true)
     setMessage(null)
     try {
-      await setLLMConfig({ provider: 'endpoint', model: endpointModel, base_url: endpointUrl, api_key: endpointKey })
+      const res = await setLLMConfig({ provider: 'endpoint', model: endpointModel, base_url: endpointUrl, api_key: endpointKey })
+      if (res.detected) {
+        setDetectedProvider(res.detected)
+      }
       setMessage({ type: 'success', text: `✅ Switched to Custom Endpoint` })
       await loadConfig()
       setEndpointKey('') // Clear key field after save
@@ -104,8 +108,17 @@ export default function LLMSettings() {
 
       {message && (
         <div className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`}>
-          <span className="alert-icon">{message.type === 'success' ? '✅' : '⚠️'}</span>
-          <span>{message.text}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <span className="alert-icon">{message.type === 'success' ? '✅' : '⚠️'}</span>
+              <span>{message.text}</span>
+            </div>
+            {message.type === 'success' && detectedProvider && (
+              <span className="badge badge-success" style={{ marginLeft: '12px', fontWeight: 'bold' }}>
+                [ Auto-detected: {detectedProvider} ✅ ]
+              </span>
+            )}
+          </div>
         </div>
       )}
 

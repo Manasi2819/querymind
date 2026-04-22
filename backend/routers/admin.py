@@ -178,6 +178,7 @@ async def delete_db_config(token_data: dict = Depends(verify_token), db: Session
 
 @router.post("/llm-config")
 async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    from services.llm_service import detect_provider, normalize_url, test_endpoint
     user_id = token_data.get("user_id")
     admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
     if not admin_settings:
@@ -186,6 +187,29 @@ async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_t
         admin_settings.llm_config = {}
         
     incoming_cfg = config.model_dump(exclude_none=True)
+    
+    # Auto-detection for custom endpoints
+    detected_display = None
+    if incoming_cfg.get("provider") in ["endpoint", "ollama"]:
+        base_url = incoming_cfg.get("base_url")
+        if base_url:
+            # 1. Try to test the endpoint to see what it is
+            detected = await test_endpoint(base_url)
+            
+            # 2. If testing fails, fall back to simple string detection
+            if detected == "unknown":
+                detected = detect_provider(base_url)
+            
+            # 3. Normalize URL based on detected provider
+            incoming_cfg["base_url"] = normalize_url(base_url, detected)
+            
+            # 4. Set display name for UI
+            detected_display = "Ollama" if detected == "ollama_native" else "OpenAI Compatible"
+            
+            # Store the underlying provider type so get_llm knows what to do
+            # We keep 'provider' as 'endpoint' or 'ollama' in DB for UI state, 
+            # but we can store the sub-type in the config dict.
+            incoming_cfg["detected_provider"] = detected
     
     # Create a new dictionary to ensure SQLAlchemy detects the change
     current_cfg = dict(admin_settings.llm_config) if admin_settings.llm_config else {}
@@ -226,7 +250,16 @@ async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_t
         
     admin_settings.llm_config = current_cfg
     db.commit()
-    return {"message": "LLM provider updated", "provider": admin_settings.llm_config.get("provider"), "base_url": admin_settings.llm_config.get("base_url")}
+    
+    resp = {
+        "message": "LLM provider updated", 
+        "provider": admin_settings.llm_config.get("provider"), 
+        "base_url": admin_settings.llm_config.get("base_url")
+    }
+    if detected_display:
+        resp["detected"] = detected_display
+        
+    return resp
 
 @router.get("/llm-config")
 async def get_llm_config(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):

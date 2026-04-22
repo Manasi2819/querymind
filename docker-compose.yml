@@ -17,12 +17,15 @@ services:
     env_file:
       - .env
     environment:
-      # Optional: To use MySQL instead of default SQLite, provide DATABASE_URL in .env
-      - CHROMA_PERSIST_DIR=/app/data/chroma_db
-      - UPLOAD_DIR=/app/data/uploads
+      # 🧠 Separate paths for better isolation
+      - CHROMA_PERSIST_DIR=/app/chroma_db
+      - UPLOAD_DIR=/app/uploads
       - DATABASE_URL=sqlite:////app/data/querymind_metadata.db
     volumes:
-      - ./data:/app/data
+      # 🗄️ Named Volumes (Requirement 3: Prefer named volumes over bind mounts)
+      - querymind_data:/app/data
+      - querymind_chroma:/app/chroma_db
+      - querymind_uploads:/app/uploads
     networks:
       - querymind_net
     ports:
@@ -34,3 +37,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
+
+volumes:
+  querymind_data:
+  querymind_chroma:
+  querymind_uploads:

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     # ── Infrastructure Credentials ────────────────────────────────────────
     postgres_password: str = "changeme"
+    hf_token: str = ""
 
     class Config:
         env_file = (".env", "../.env")
