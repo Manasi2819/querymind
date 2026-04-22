@@ -1,9 +1,13 @@
 # ══════════════════════════════════════════════════════════════════════════════
-#  QueryMind — Single Container Dockerfile
-#  Multi-stage build: Node (build frontend) → Python Slim (run Nginx + FastAPI)
+#  QueryMind — Optimized Single-Image Dockerfile
+#  3-stage build:
+#    Stage 1 (build-frontend) : Node  → compile React → dist/
+#    Stage 2 (pip-builder)    : Python + build-essential → compile wheels
+#    Stage 3 (final)          : Python slim → install wheels + copy dist/
+#  Result: NO Nginx, NO Supervisor. Only uvicorn serves everything.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Stage 1: Build Frontend ──────────────────────────────────────────────────
+# ── Stage 1: Build Frontend ───────────────────────────────────────────────────
 FROM node:20-alpine AS build-frontend
 
 WORKDIR /app/frontend
@@ -11,50 +15,61 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci --prefer-offline
 
-# Nginx handles routing so base URL is /
+# API calls go to /api/* — Vite base is / so React Router works
 ARG VITE_API_URL=/
 ENV VITE_API_URL=$VITE_API_URL
 
 COPY frontend/ .
 RUN npm run build
 
-# ── Stage 2: Serve (Nginx + Uvicorn) ─────────────────────────────────────────
-FROM python:3.11-slim
+# ── Stage 2: Build Python Wheels ─────────────────────────────────────────────
+# We compile ALL wheels here so build-essential never lands in the final image.
+FROM python:3.11-slim AS pip-builder
 
-WORKDIR /app
+WORKDIR /wheels
 
-# Install system dependencies (Nginx, Supervisor, C build tools for dependencies)
+# Install C build tools ONLY in this throwaway stage
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx \
-    supervisor \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Setup backend Python environment
-COPY backend/requirements.txt backend/
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY backend/requirements.txt .
 
-# Copy backend source code
+# Force CPU-only PyTorch (saves ~400-600 MB vs the default GPU build)
+RUN pip wheel --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements.txt \
+    -w /wheels
+
+# ── Stage 3: Final Runtime Image ─────────────────────────────────────────────
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Minimal runtime deps only — no build tools, no nginx, no supervisor
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pre-compiled wheels (no compiler needed, no internet hit for packages)
+COPY --from=pip-builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*.whl \
+    && rm -rf /wheels
+
+# Copy backend source
 COPY backend/ backend/
 
-# Replace the default nginx site with our custom config
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
-RUN rm /etc/nginx/sites-enabled/default || true
+# Copy React build output → backend/static/ (FastAPI will serve this)
+COPY --from=build-frontend /app/frontend/dist backend/static/
 
-# Copy built frontend assets from Stage 1 into Nginx HTML dir
-RUN rm -rf /usr/share/nginx/html/*
-COPY --from=build-frontend /app/frontend/dist /usr/share/nginx/html
+# Create persistence directories (volumes will be mounted here)
+RUN mkdir -p /app/data /app/chroma_db /app/uploads
 
-# Copy Supervisor configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Update start.sh to bind on 0.0.0.0:8000 (not 127.0.0.1 which is localhost-only)
+RUN sed -i 's/--host 127.0.0.1/--host 0.0.0.0/' /app/backend/start.sh || true
 
-# Setup volumes for persistence
-RUN mkdir -p /app/data && \
-    mkdir -p /app/chroma_db && \
-    mkdir -p /app/uploads
+EXPOSE 8000
 
-EXPOSE 80
-
-# Use supervisor to run both Nginx and Uvicorn
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Single process — no supervisor needed
+CMD ["/bin/bash", "/app/backend/start.sh"]

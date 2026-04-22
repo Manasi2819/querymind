@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from database import SessionLocal, Base, engine
 from models.db_models import AdminUser
 from auth import get_password_hash
@@ -71,7 +72,34 @@ widget_dir = os.path.join(os.path.dirname(__file__), "../widget")
 if os.path.exists(widget_dir):
     app.mount("/widget", StaticFiles(directory=widget_dir), name="widget")
 
+# ── React Frontend Static Files ───────────────────────────────────────────────
+# The React build output (dist/) is copied to backend/static/ during Docker build.
+# FastAPI serves it directly — no Nginx needed.
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    # Serve all static assets (JS, CSS, images, etc.)
+    app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
 
-@app.get("/")
-async def root():
-    return {"message": "QueryMind API is running", "docs": "/docs"}
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        """Serve the React app root."""
+        return FileResponse(os.path.join(static_dir, "index.html"))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Catch-all: return index.html for any route not matched by the API.
+        This lets React Router handle client-side navigation.
+        """
+        # Don't intercept /api/* or /docs or /openapi.json
+        if full_path.startswith(("api/", "docs", "openapi", "redoc", "widget")):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404)
+        index = os.path.join(static_dir, "index.html")
+        if os.path.exists(index):
+            return FileResponse(index)
+        return {"message": "QueryMind API is running", "docs": "/docs"}
+else:
+    # Running locally without Docker (no static/ dir) — plain API response
+    @app.get("/")
+    async def root():
+        return {"message": "QueryMind API is running", "docs": "/docs"}

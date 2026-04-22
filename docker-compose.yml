@@ -1,6 +1,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
-#  QueryMind — Single Container Deployment
-#  Runs Nginx (Frontend) and FastAPI (Backend) under one container via Supervisor
+#  QueryMind — Single Container Deployment (Optimized)
+#  FastAPI (uvicorn) serves BOTH the API and the React frontend.
+#  No Nginx. No Supervisor. One process, one port.
 # ══════════════════════════════════════════════════════════════════════════════
 
 networks:
@@ -29,10 +30,9 @@ services:
     networks:
       - querymind_net
     ports:
-      - "80:80"       # Web UI
-      - "8000:8000"   # Direct API access (optional)
+      - "8000:8000"   # Web UI + API on single port
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:80/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8000/ || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
