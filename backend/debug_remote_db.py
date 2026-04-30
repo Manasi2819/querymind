@@ -3,12 +3,16 @@ import json
 from cryptography.fernet import Fernet
 import os
 from sqlalchemy import create_engine, inspect
+import sys
 
-# Get Fernet Key
-# Try to find it in .env or settings
-# In the previous view_file of .env:
-# FERNET_KEY=REMOVED_KEY_FOR_SECURITY====================
-FERNET_KEY = b"REMOVED_KEY_FOR_SECURITY===================="
+# Add the parent directory to the path so we can import config
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from config import get_settings
+
+settings = get_settings()
+if not settings.fernet_key:
+    raise ValueError("FERNET_KEY is not configured")
+FERNET_KEY = settings.fernet_key.encode('utf-8')
 cipher = Fernet(FERNET_KEY)
 
 conn = sqlite3.connect('querymind_metadata.db')
