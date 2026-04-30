@@ -174,7 +174,61 @@ async def delete_db_config(token_data: dict = Depends(verify_token), db: Session
     if admin_settings:
         admin_settings.db_config = {}
         db.commit()
+
+    # Also delete the ChromaDB schema interpretation collection so stale
+    # AI-generated metadata does not linger after disconnection.
+    try:
+        from services.sql_metadata_service import get_chroma_client
+        chroma_client = get_chroma_client()
+        collection_name = f"user_{user_id}_sql_metadata"
+        chroma_client.delete_collection(name=collection_name)
+    except Exception:
+        # Collection may not exist (e.g. schema was never indexed) — safe to ignore
+        pass
+
     return {"message": "Database access removed"}
+
+@router.post("/reindex-schema")
+async def reindex_schema(token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    """
+    Force re-fetches the live database schema and re-indexes it into ChromaDB.
+
+    Use this whenever:
+    - The database schema has changed (new columns, renamed tables, etc.)
+    - Queries are failing because ChromaDB has a stale/incomplete schema snapshot
+    - You suspect columns are missing from the validator's schema map
+
+    This deletes and fully rebuilds the {tenant_id}_sql_metadata ChromaDB collection.
+    It does NOT affect documents, knowledge base, or any other collections.
+    """
+    user_id = token_data.get("user_id")
+    admin_settings = db.query(AdminSettings).filter(AdminSettings.user_id == user_id).first()
+
+    if not admin_settings or not admin_settings.db_config:
+        raise HTTPException(status_code=400, detail="No database configured. Please connect a database first.")
+
+    enc_url = admin_settings.db_config.get("url")
+    if not enc_url:
+        raise HTTPException(status_code=400, detail="Database URL is missing from config.")
+
+    from services.encryption import decrypt_secret
+    try:
+        db_url = decrypt_secret(enc_url)
+    except Exception:
+        db_url = enc_url  # backward-compatible fallback for plain-text URLs
+
+    llm_cfg = get_llm_cfg(db_session=db, user_id=user_id)
+    tenant_id = f"user_{user_id}"
+
+    try:
+        count = index_db_metadata(db_url, tenant_id=tenant_id, llm_config=llm_cfg)
+        return {
+            "message": f"Schema re-indexed successfully. {count} tables indexed into ChromaDB.",
+            "tables_indexed": count,
+            "tenant_id": tenant_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Schema re-indexing failed: {str(e)}")
 
 @router.post("/llm-config")
 async def save_llm_config(config: LLMConfig, token_data: dict = Depends(verify_token), db: Session = Depends(get_db)):

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 import re
+import time
 import traceback
+from datetime import datetime
 from sqlalchemy.orm import Session
 from database import get_db
 from models.schemas import ChatRequest, ChatResponse
@@ -10,6 +12,8 @@ from models import db_models as models
 from routers.admin import get_db_url, get_llm_cfg, get_db_type
 from services.sql_rag_service import FORBIDDEN_SQL_KEYWORDS
 from services.redaction_service import redact_secrets
+from services.context_decision_agent import run_context_decision, update_session_topic
+from services.pipeline_logger import log_user_input_stage, log_intent_classification, log_final_response, log_error, log_pipeline_event
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -18,12 +22,47 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     question = request.message
     session_id = request.session_id
     user_id = request.user_id or 1
+    
+    # ── 1. LOG USER INPUT ───────────────────────────────────────────────────
+    log_user_input_stage(question, session_id, str(user_id))
+    start_time = time.perf_counter()
+
+    # ── 1. CACHE CHECK ──────────────────────────────────────────────────────
+    # Detect if this is the first message of a new conversation.
+    # is_new_chat = True means request.history is empty (user just started fresh).
+    is_new_chat = not bool(request.history)
+
+    # On a new chat: wipe the old session context and cache to prevent
+    # stale data from a previous conversation leaking into the new one.
+    if is_new_chat:
+        db.query(models.SessionContext).filter(
+            models.SessionContext.session_id == session_id
+        ).delete()
+        db.query(models.QueryCache).filter(
+            models.QueryCache.session_id == session_id
+        ).delete()
+        db.commit()
+        log_pipeline_event("SESSION_RESET", f"New chat detected. Wiped context and cache for session {session_id[:8]}...", session_id=session_id)
+
+    # Check cache only for follow-up messages in an active session
+    if not is_new_chat:
+        cached_turn = db.query(models.QueryCache).filter(
+            models.QueryCache.session_id == session_id,
+            models.QueryCache.query_text == question
+        ).first()
+
+        if cached_turn:
+            if (datetime.utcnow() - cached_turn.created_at.replace(tzinfo=None)).total_seconds() < 86400:
+                log_pipeline_event("CACHE", f"Cache HIT for query: \"{question[:50]}...\"", session_id=session_id, cache_id=str(cached_turn.id))
+                resp_data = cached_turn.response_json
+                resp_data["cached"] = True
+                return ChatResponse(**resp_data)
 
     # Pre-emptive SQL injection/modification check
     q_upper = question.upper()
     for kw in FORBIDDEN_SQL_KEYWORDS:
         if re.search(rf"\b{kw}\b", q_upper):
-            answer = "I cannot do that action, I can only fetch data and show it NA."
+            answer = "I cannot do that action, I can only fetch data and show it."
             return ChatResponse(answer=answer, source="system", session_id=session_id)
 
     # Override LLM config if provided in request
@@ -56,6 +95,9 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         chat_session.title = session_title
         db.commit()
 
+    # ── 2. CONTEXT DECISION AGENT ──────────────────────────────────────────
+    is_related = run_context_decision(session_id, question, db)
+
     # Format history from the incoming request (taking last 5 messages for brevity)
     history_str = ""
     if request.history:
@@ -63,8 +105,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         history_str = "Relevant conversation history:\n" + "\n".join(
             f"[{m.role}] {m.content}" for m in recent_history
         ) + "\n"
+        
+        # Explicit directive for RELATED queries as per CDA design
+        if is_related:
+            history_str += "\nNOTE: The new user query explicitly depends on the following conversation context. Use this context to fully understand the user's request.\n"
 
     # Classify intent using LLM or fallback
+    intent_start = time.perf_counter()
     intent = classify_intent(
         question, 
         has_db, 
@@ -75,6 +122,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         base_url=base_url,
         history=history_str
     )
+    log_intent_classification(intent, (time.perf_counter() - intent_start) * 1000)
+
 
     def _save_turn_db(role: str, content: str, sql: str = None, data: list = None, source: str = None):
         msg = models.ChatMessage(
@@ -100,7 +149,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         elif intent == "sql_with_context":
             from services.sql_rag_service import run_context_aware_sql_pipeline
             
-            answer, sql, data = run_context_aware_sql_pipeline(
+            answer, sql, data, metadata = run_context_aware_sql_pipeline(
                 question, 
                 tenant_id=tenant_id, 
                 db_url=db_url, 
@@ -109,12 +158,37 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 api_key=api_key,
                 model=selected_model,
                 base_url=base_url,
-                history=history_str
+                history=history_str,
+                is_related=is_related
             )
+            
+            # Update Session Context with results
+            if metadata:
+                update_session_topic(
+                    session_id=session_id,
+                    db=db,
+                    tables=metadata.get("tables"),
+                    columns=metadata.get("columns"),
+                    topic=metadata.get("topic"),
+                    summary=metadata.get("summary"),
+                    intent=intent
+                )
             source = "sql"
             answer = redact_secrets(answer)
             _save_turn_db("user", question)
             _save_turn_db("assistant", answer, sql, data, source)
+            
+            # Save to cache if data is not too large (e.g., < 500 rows)
+            if data and data.get("rows") and len(data["rows"]) < 500:
+                resp = ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
+                new_cache = models.QueryCache(
+                    session_id=session_id,
+                    query_text=question,
+                    response_json=resp.model_dump()
+                )
+                db.add(new_cache)
+                db.commit()
+                
             return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":

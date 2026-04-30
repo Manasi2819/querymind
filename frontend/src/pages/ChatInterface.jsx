@@ -47,19 +47,23 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
 
     try {
       // ── Same-day frontend cache check ─────────────────────────
-      const cached = checkQueryCache(userId, text)
-      if (cached) {
-        const cachedMsg = {
-          role: 'assistant',
-          content: cached.answer,
-          sql: cached.sql || null,
-          data: cached.data || null,
-          source: cached.source || 'cache',
-          _cached: true,
+      // ONLY check cache if this is NOT the first message of a chat.
+      // New chats should always trigger a fresh backend call.
+      if (!isFirstMessage) {
+        const cached = checkQueryCache(userId, text)
+        if (cached) {
+          const cachedMsg = {
+            role: 'assistant',
+            content: cached.answer,
+            sql: cached.sql || null,
+            data: cached.data || null,
+            source: cached.source || 'cache',
+            _cached: true,
+          }
+          onAddMessage(sessionId, cachedMsg)
+          setLoading(false)
+          return
         }
-        onAddMessage(sessionId, cachedMsg)
-        setLoading(false)
-        return
       }
 
       // ── Build history to pass to backend
@@ -158,20 +162,20 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
                     )}
 
                     {/* Data Table */}
-                    {msg.data && msg.data.length > 0 && (
+                    {msg.data && msg.data.columns && msg.data.rows && msg.data.rows.length > 0 && (
                       <div className="chat-table-wrapper">
                         <table className="data-table">
                           <thead>
                             <tr>
-                              {Object.keys(msg.data[0]).map((col) => (
+                              {msg.data.columns.map((col) => (
                                 <th key={col}>{col}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
-                            {msg.data.map((row, ri) => (
+                            {msg.data.rows.map((row, ri) => (
                               <tr key={ri}>
-                                {Object.values(row).map((val, vi) => (
+                                {row.map((val, vi) => (
                                   <td key={vi}>{String(val)}</td>
                                 ))}
                               </tr>

@@ -9,6 +9,11 @@ from models.db_models import AdminUser
 from auth import get_password_hash
 from config import get_settings
 from routers import chat, admin, ingest, sessions
+from services.pipeline_logger import log_api_request, request_id_var
+import time
+import uuid
+from fastapi import Request
+
 
 settings = get_settings()
 
@@ -52,6 +57,23 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+@app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+    # Set a unique request ID for this thread/context
+    request_id = str(uuid.uuid4())
+    request_id_var.set(request_id)
+    
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration = (time.perf_counter() - start_time) * 1000
+    
+    # Log the request
+    log_api_request(request.method, request.url.path, response.status_code, duration)
+    
+    # Add request ID to response headers for debugging
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 app.add_middleware(
     CORSMiddleware,

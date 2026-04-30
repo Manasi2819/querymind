@@ -69,3 +69,28 @@ class ChatMessage(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     session = relationship("ChatSession", back_populates="messages")
+
+
+class SessionContext(Base):
+    __tablename__ = "session_context"
+
+    session_id   = Column(String(128), ForeignKey("chat_sessions.id", ondelete="CASCADE"), primary_key=True)
+    current_topic = Column(String(255), nullable=True)
+    tables_used  = Column(JSON, default=[])   # List of table names
+    columns_used = Column(JSON, default=[])   # List of column names
+    filters_used = Column(JSON, default=[])   # List of filters/conditions
+    intent_type  = Column(String(64), nullable=True)
+    summary      = Column(Text, nullable=True) # Short summary of current state
+    updated_at   = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    session = relationship("ChatSession")
+
+
+class QueryCache(Base):
+    __tablename__ = "query_cache"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    session_id    = Column(String(128), ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True)
+    query_text    = Column(Text, nullable=False)
+    response_json = Column(JSON, nullable=False) # The full ChatResponse payload
+    created_at    = Column(DateTime(timezone=True), default=datetime.utcnow)

@@ -80,4 +80,6 @@ backend/tools/__pycache__/
 backend/tests/__pycache__/
 
 # Implementation plan files
-implementation_plan_*.md
+implementation_plan_*.mdb
+
+backend/logs/
