@@ -123,7 +123,7 @@ def parse_schema_metadata(schema_text: str) -> dict:
             
     return schema_map
 
-MAX_COLUMNS_PER_TABLE = 10
+MAX_COLUMNS_PER_TABLE = 100
 
 def get_column_type(table: str, column: str, schema_metadata: dict) -> str:
     """Utility function to get the datatype of a column."""
@@ -338,21 +338,6 @@ def select_relevant_tables(query: str, schema_text: str, llm_provider: str = Non
     if not unique_tables:
         return []
 
-    # FIX 3: Build dynamic column → table mapping from live schema text.
-    # This anchors the LLM to the correct table for date/identifier columns
-    # that are semantically ambiguous (e.g. "joined" → date_of_joining → employee).
-    col_to_table = {}  # col_name -> table_name
-    for chunk in schema_text.split("\n\n"):
-        tbl_m = re.search(r"(?i)Table:\s*(\w+)", chunk)
-        cols_m = re.search(r"(?i)Columns:\s*(.*)", chunk)
-        if tbl_m and cols_m:
-            tbl = tbl_m.group(1)
-            cols_raw = re.split(r",\s*(?![^()]*\))", cols_m.group(1))
-            for c in cols_raw:
-                cm = re.match(r"(\w+)", c.strip())
-                if cm:
-                    col_to_table[cm.group(1).lower()] = tbl
-
     # FIX B: Build a per-table summary (first 5 col names each) instead of a
     # flat col→table map capped at 30.  With 60+ tables the old [:30] cap was
     # non-deterministic and dropped most anchor columns.  Showing every table
@@ -387,7 +372,7 @@ def select_relevant_tables(query: str, schema_text: str, llm_provider: str = Non
       you MUST ALSO include the main primary table (e.g. employee) to ensure JOINS can be performed.
     - Return ONLY a comma-separated list of table names.
     - Include ALL tables necessary for joins.
-    - Limit to 6 tables maximum.
+    - Limit to 10 tables maximum.
     - If none are relevant, return "NONE".
     
     Example Output: employee, employee_history, master_designation
@@ -404,6 +389,13 @@ def select_relevant_tables(query: str, schema_text: str, llm_provider: str = Non
             if re.search(rf"\b{table}\b", selected_raw, re.IGNORECASE):
                 found_tables.append(table.lower())
         selected = found_tables
+
+    # HEURISTIC: Always include 'employee' if the query is about people/names/status
+    # and 'employee' exists in the database.
+    people_keywords = ["name", "who", "status", "detail", "employee", "list", "them", "those"]
+    if any(k in query.lower() for k in people_keywords):
+        if "employee" in unique_tables and "employee" not in [t.lower() for t in selected]:
+            selected.append("employee")
 
     duration = (time.perf_counter() - start_time) * 1000
     log_table_selection(selected, query, duration)
@@ -441,7 +433,7 @@ def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 10, base_url: 
 # This guarantees that e.g. selecting 'employee_documents' automatically
 # pulls in 'employee' (its FK parent), so the validator never sees a table
 # that the schema_map doesn't know about.
-_FK_REF_RE = re.compile(r"\['.+?'\]\s*->\s*(\w+)\.\['.+?'\]", re.IGNORECASE)
+_FK_REF_RE = re.compile(r"\[?\'?.+?\'?\]?\s*->\s*(\w+)\.\[?\'?.+?\'?\]?", re.IGNORECASE)
 
 def expand_tables_via_fk(selected: list, raw_schema: str) -> list:
     """
@@ -482,18 +474,26 @@ def retrieve_schema_for_tables(table_names: list, tenant_id: str) -> str:
     client = get_chroma_client()
     try:
         col = client.get_collection(name=f"{tenant_id}_sql_metadata")
-        all_docs = col.get(include=["documents", "metadatas"])
-
-        lower_targets = {t.lower() for t in table_names}
+        
+        lower_targets = list({t.lower() for t in table_names})
         matched = []
         matched_tables = set()
 
-        # First pass: fetch docs for the directly requested tables
-        for doc, meta in zip(all_docs["documents"], all_docs["metadatas"]):
-            tbl = (meta or {}).get("table_name", "").lower()
-            if tbl in lower_targets:
-                matched.append(doc)
-                matched_tables.add(tbl)
+        try:
+            # First pass: fetch docs for the directly requested tables using $in filter
+            initial_docs = col.get(where={"table_name": {"$in": lower_targets}}, include=["documents", "metadatas"])
+            if initial_docs and initial_docs.get("documents"):
+                for doc, meta in zip(initial_docs["documents"], initial_docs["metadatas"]):
+                    matched.append(doc)
+                    matched_tables.add((meta or {}).get("table_name", "").lower())
+        except Exception:
+            # Fallback if $in is not supported: fetch all
+            all_docs = col.get(include=["documents", "metadatas"])
+            for doc, meta in zip(all_docs["documents"], all_docs["metadatas"]):
+                tbl = (meta or {}).get("table_name", "").lower()
+                if tbl in lower_targets:
+                    matched.append(doc)
+                    matched_tables.add(tbl)
 
         # FIX D: Second pass — collect FK-referenced (parent) tables from
         # the matched docs and pull their schemas too.
@@ -506,11 +506,20 @@ def retrieve_schema_for_tables(table_names: list, tenant_id: str) -> str:
         fk_targets -= matched_tables
 
         if fk_targets:
-            for doc, meta in zip(all_docs["documents"], all_docs["metadatas"]):
-                tbl = (meta or {}).get("table_name", "").lower()
-                if tbl in fk_targets:
-                    matched.append(doc)
-                    matched_tables.add(tbl)
+            try:
+                fk_docs = col.get(where={"table_name": {"$in": list(fk_targets)}}, include=["documents", "metadatas"])
+                if fk_docs and fk_docs.get("documents"):
+                    for doc, meta in zip(fk_docs["documents"], fk_docs["metadatas"]):
+                        matched.append(doc)
+                        matched_tables.add((meta or {}).get("table_name", "").lower())
+            except Exception:
+                # Fallback
+                all_docs = col.get(include=["documents", "metadatas"])
+                for doc, meta in zip(all_docs["documents"], all_docs["metadatas"]):
+                    tbl = (meta or {}).get("table_name", "").lower()
+                    if tbl in fk_targets:
+                        matched.append(doc)
+                        matched_tables.add(tbl)
 
         return "\n\n".join(matched)
     except Exception:
@@ -523,8 +532,6 @@ def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5, base_url: st
     
     collections_to_check = [
         f"{tenant_id}_data_dictionary", 
-        f"{tenant_id}_general_document",
-        f"{tenant_id}_document", 
         f"{tenant_id}_knowledge_base"
     ]
     contexts = []
@@ -606,7 +613,7 @@ def generate_sql_with_context(question: str, schema: str, knowledge: str, engine
     start_time = time.perf_counter()
     llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
     
-    prompt = f"""You are an expert SQL generator.
+    prompt = f"""You are an expert SQL generator for {engine_type}.
     
 DATABASE SCHEMA:
 {schema}
@@ -619,22 +626,16 @@ USER QUESTION:
 
 {selection_hint}
 
-INSTRUCTIONS:
-- Return ONLY the raw SQL code for {engine_type}. 
-- CRITICAL: Do NOT add notes, explanations, or preambles. Just the code.
-- Ensure the query is read-only (SELECT only).
-- SECURITY: NEVER generate queries for internal tables: {', '.join(FORBIDDEN_TABLES)}.
-- LITERAL VALUES: Use actual values from the question in the SQL (e.g., if the user asks for 'IT' department, use WHERE department = 'IT'). 
-- NO PLACEHOLDERS: NEVER use placeholders like '?', ':id', or '$1'. Use literal values instead.
-- JOIN HINT: In this database, tables usually join on `employee_id` (VARCHAR) or `emp_id` (VARCHAR), NOT the auto-increment primary key `id` (INTEGER). Be careful not to join `employee.id` to `employee_id` in other tables.
-- TYPE SAFETY: PostGreSQL is extremely strict. ALWAYS use explicit type casts `CAST(col AS TEXT)` on BOTH sides of EVERY JOIN condition (e.g., `ON CAST(e.employee_id AS TEXT) = CAST(er.employee_id AS TEXT)`). This is mandatory to prevent type mismatch errors.
-- HISTORY TABLES: Tables ending in `_history` (e.g. `employee_history`) contain snapshots. They may NOT have the same columns as the main table. Use ONLY the columns listed in the schema for that specific history table. Do NOT assume `created_at` or `modified_at` exist unless listed.
-- JOINS: Use the "foreign_keys" section in the schema to determine the correct join columns.
-- MINIMAL JOINS: Only join tables if the question explicitly requires data from multiple tables. If the question asks about a single entity (e.g., "all employees"), do NOT join other tables.
-- Never invent columns. If a column like 'employee_name' is not listed, use 'first_name || \' \' || last_name' or similar.
-- SELECT CLAUSE: If the user asks for "all details", select ONLY the columns explicitly listed in the schema for the tables you are joining. DO NOT invent columns or assign columns to the wrong table alias.
-- If column not found → return "ERROR: COLUMN_NOT_FOUND".
-- If information is insufficient → return "ERROR: Information insufficient".
+STRICT INSTRUCTIONS:
+1. SCHEMA ADHERENCE: Use ONLY the tables and columns explicitly listed in the DATABASE SCHEMA above. Do NOT invent columns or guess their names.
+2. NO HALLUCINATION: If the user asks for a field like 'name' and it's not in the schema, use a combination of available fields (e.g., `first_name || ' ' || last_name`) or return "ERROR: COLUMN_NOT_FOUND".
+3. JOIN DISCIPLINE: For every table alias you use (e.g., `e.`, `er.`), you MUST include a corresponding `JOIN` or `FROM` clause for that table. Never use an alias without defining it.
+4. TYPE SAFETY (PostgreSQL): PostGreSQL is strict. ALWAYS use explicit type casts `CAST(col AS TEXT)` on BOTH sides of EVERY JOIN condition (e.g., `ON CAST(e.employee_id AS TEXT) = CAST(er.employee_id AS TEXT)`).
+5. PRIMARY KEYS: Join tables on `employee_id` or `emp_id` (VARCHAR) where possible. Do not join `employee.id` (SERIAL) to `employee_id` (VARCHAR) without casting.
+6. FILTERS: If the user mentions a specific ID or name, include a `WHERE` clause for that exact value.
+7. READ-ONLY: Only generate `SELECT` statements.
+8. NO PLACEHOLDERS: Use literal values directly in the SQL.
+9. HISTORY TABLES: Only use columns listed for `_history` tables. Do not assume they match the main table.
 
 ### SQL QUERY:"""
     
@@ -664,7 +665,7 @@ The query has JOIN mismatches:
 Fix: You MUST fix all failing JOINs by casting to TEXT, e.g. CAST(col1 AS TEXT) = CAST(col2 AS TEXT)
 """
 
-    prompt = f"""You are a specialized SQL assistant.
+    prompt = f"""You are a specialized SQL assistant for {engine_type}.
 The previous SQL query you generated failed with an error. Please fix it.
 
 ### DATABASE SCHEMA CONTEXT:
@@ -679,18 +680,16 @@ The previous SQL query you generated failed with an error. Please fix it.
 ### ERROR MESSAGE:
 {error_message}
 {type_mismatch_block}
-### INSTRUCTIONS:
-- Return ONLY the corrected raw SQL code. 
-- CRITICAL: Do NOT add notes, explanations, or preambles. Just the code.
-- LITERAL VALUES: Use actual values, NEVER placeholders like '?', ':id', or '$1'.
-- TYPE CASTING: If the error contains 'JOIN ERROR', you MUST fix the mentioned columns immediately.
-- SCHEMA COMPLIANCE: Use the SCHEMA CONTEXT to find correct column names.
-- STRICT COLUMN ADHERENCE: If the error says "Column X does not exist in table Y", you MUST NOT select column X from table Y. Find the correct table that actually contains column X by carefully reading the SCHEMA CONTEXT, or remove the column from the SELECT clause entirely.
-- NO HALLUCINATION: Do NOT assume a column exists just because it exists in a related table. History tables often lack metadata columns.
-- JOINS: Re-check the "Foreign Keys" section to find the correct relationship.
-- COLUMN HALLUCINATION: If 'employee_name' failed, check if you should use `first_name || ' ' || last_name`.
+
+STRICT INSTRUCTIONS:
+1. SCHEMA ADHERENCE: Use ONLY the tables and columns explicitly listed in the SCHEMA CONTEXT. If a column like '{missing_cols[0] if 'missing_cols' in locals() and missing_cols else 'X'}' failed, find the correct table in the context that actually has it.
+2. JOIN DISCIPLINE: Ensure every alias used (e.g., `e.`) has a corresponding `JOIN` clause.
+3. TYPE CASTING: If the error mentions 'JOIN ERROR' or type mismatch, you MUST use `CAST(col AS TEXT) = CAST(col2 AS TEXT)`.
+4. NO HALLUCINATION: Do not assume columns exist. If a column is missing from the schema, do not use it.
+5. LITERAL VALUES: Use actual values, NEVER placeholders.
 
 ### CORRECTED SQL QUERY:"""
+
     
     response = llm.invoke(prompt)
     sql = _extract_sql(response.content)
@@ -868,20 +867,26 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
                 error_msg = f"Schema Validation Error:\n{error_msg}"
 
             # FIX C: Self-healing schema injection on "Table X does not exist".
-            # When the validator reports a missing table, fetch that table's
-            # schema from ChromaDB and append it to schema_context + reparse
-            # schema_map BEFORE the correction LLM call.  This means the
-            # correction prompt gets the full schema, and the validator will
-            # pass on the very next attempt — no more 3-retry death spirals.
-            missing_in_err = re.findall(
-                r"Table '(\w+)' does not exist in the retrieved schema",
-                error_msg
-            )
-            if missing_in_err:
-                patch = retrieve_schema_for_tables(missing_in_err, tenant_id)
+            # Or if a column is missing, search for the table that contains it.
+            missing_tables = re.findall(r"Table '(\w+)' does not exist", error_msg)
+            missing_cols = re.findall(r"Column '(\w+)' does not exist", error_msg)
+            
+            new_tables = set(missing_tables)
+            if missing_cols:
+                # Use retrieval to find which tables contain these columns
+                for col in missing_cols:
+                    col_search_res = retrieve_relevant_schema(f"table containing column {col}", tenant_id, k=2, base_url=base_url)
+                    found_tables = re.findall(r"(?i)Table:\s*(\w+)", col_search_res)
+                    new_tables.update([t.lower() for t in found_tables])
+
+            if new_tables:
+                patch = retrieve_schema_for_tables(list(new_tables), tenant_id)
                 if patch:
                     schema_context += "\n\n" + patch
-                    schema_map = parse_schema_metadata(schema_context)  # reparse with new tables
+                    schema_map = parse_schema_metadata(schema_context)
+                    # Also update compressed_schema for the correction LLM
+                    compressed_schema = compress_schema_for_llm(schema_map, selected_tables)
+
         else:
             try:
                 final_sql, data, df = execute_query(sql, db_url)

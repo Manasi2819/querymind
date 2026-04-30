@@ -23,13 +23,13 @@ const md5Simple = (str) => {
 
 const todayStr = () => new Date().toISOString().slice(0, 10) // "YYYY-MM-DD"
 
-function cacheStorageKey(userId) {
-  return `qm_cache_${userId}`
+function cacheStorageKey(userId, sessionId) {
+  return `qm_cache_${userId}_${sessionId}`
 }
 
-export function checkQueryCache(userId, question) {
+export function checkQueryCache(userId, sessionId, question) {
   try {
-    const raw = localStorage.getItem(cacheStorageKey(userId))
+    const raw = localStorage.getItem(cacheStorageKey(userId, sessionId))
     if (!raw) return null
     const store = JSON.parse(raw)
     const today = todayStr()
@@ -40,9 +40,9 @@ export function checkQueryCache(userId, question) {
   }
 }
 
-export function storeQueryCache(userId, question, response) {
+export function storeQueryCache(userId, sessionId, question, response) {
   try {
-    const key = cacheStorageKey(userId)
+    const key = cacheStorageKey(userId, sessionId)
     const today = todayStr()
     const hash = md5Simple(question.trim().toLowerCase())
 

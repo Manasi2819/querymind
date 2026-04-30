@@ -50,7 +50,7 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
       // ONLY check cache if this is NOT the first message of a chat.
       // New chats should always trigger a fresh backend call.
       if (!isFirstMessage) {
-        const cached = checkQueryCache(userId, text)
+        const cached = checkQueryCache(userId, sessionId, text)
         if (cached) {
           const cachedMsg = {
             role: 'assistant',
@@ -94,7 +94,7 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
       // Do not cache errors so the user can easily retry
       const isError = data.answer && (data.answer.startsWith('Error') || data.answer.startsWith('⚠️ Error'));
       if (!data.cached && !isError) {
-        storeQueryCache(userId, text, {
+        storeQueryCache(userId, sessionId, text, {
           answer: data.answer,
           sql: data.sql || null,
           data: data.data || null,
