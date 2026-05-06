@@ -137,7 +137,7 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
                 <div className="message-avatar">
                   {msg.role === 'user' ? 'AD' : '🧠'}
                 </div>
-                <div>
+                <div className="message-content">
                   <div className="message-bubble">
                     <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
 
