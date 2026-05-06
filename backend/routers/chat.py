@@ -68,6 +68,11 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"[{m.role}] {m.content}" for m in recent_history
         ) + "\n"
 
+    # Context check & Decision
+    from services.context_decision_agent import ContextDecisionAgent
+    agent = ContextDecisionAgent(provider, api_key, selected_model, base_url)
+    is_related, score, _ = agent.decide(question, request.history or [], chat_session.summary or chat_session.title)
+
     # Classify intent using LLM or fallback
     intent = classify_intent(
         question, 
@@ -77,7 +82,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         api_key=api_key, 
         model=selected_model, 
         base_url=base_url,
-        history=history_str
+        history=history_str,
+        is_related=is_related
     )
 
     def _save_turn_db(role: str, content: str, sql: str = None, data: list = None, source: str = None):
@@ -91,14 +97,20 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
         db.add(msg)
         db.commit()
+        return msg
 
     try:
         if intent == "unauthorized":
             answer = "I cannot do that action, I can only fetch data and show it."
             source = "system"
             answer = redact_secrets(answer)
-            _save_turn_db("user", question)
-            _save_turn_db("assistant", answer, None, None, source)
+            user_msg = _save_turn_db("user", question)
+            asst_msg = _save_turn_db("assistant", answer, None, None, source)
+            
+            # Update summary
+            chat_session.summary = agent.update_summary(request.history + [user_msg, asst_msg], chat_session.summary)
+            db.commit()
+            
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
         elif intent == "sql_with_context":
@@ -113,20 +125,31 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 api_key=api_key,
                 model=selected_model,
                 base_url=base_url,
-                history=history_str
+                history=history_str,
+                is_related=is_related
             )
             source = "sql"
             answer = redact_secrets(answer)
-            _save_turn_db("user", question)
-            _save_turn_db("assistant", answer, sql, data, source)
+            user_msg = _save_turn_db("user", question)
+            asst_msg = _save_turn_db("assistant", answer, sql, data, source)
+            
+            # Update summary
+            chat_session.summary = agent.update_summary(request.history + [user_msg, asst_msg], chat_session.summary)
+            db.commit()
+            
             return ChatResponse(answer=answer, sql=sql, data=data, source=source, session_id=session_id)
 
         elif intent == "rag":
-            answer = answer_from_docs(question, tenant_id, "general_document", provider, api_key, history=history_str, model=selected_model, base_url=base_url)
+            answer = answer_from_docs(question, tenant_id, "general_document", provider, api_key, history=history_str, model=selected_model, base_url=base_url, is_related=is_related)
             source = "rag"
             answer = redact_secrets(answer)
-            _save_turn_db("user", question)
-            _save_turn_db("assistant", answer, None, None, source)
+            user_msg = _save_turn_db("user", question)
+            asst_msg = _save_turn_db("assistant", answer, None, None, source)
+            
+            # Update summary
+            chat_session.summary = agent.update_summary(request.history + [user_msg, asst_msg], chat_session.summary)
+            db.commit()
+            
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
         else:
@@ -134,8 +157,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             answer = "I'm sorry, I can only answer questions about your connected database or uploaded documents."
             source = "chat"
             answer = redact_secrets(answer)
-            _save_turn_db("user", question)
-            _save_turn_db("assistant", answer, None, None, source)
+            user_msg = _save_turn_db("user", question)
+            asst_msg = _save_turn_db("assistant", answer, None, None, source)
+            
+            # Update summary
+            chat_session.summary = agent.update_summary(request.history + [user_msg, asst_msg], chat_session.summary)
+            db.commit()
+            
             return ChatResponse(answer=answer, source=source, session_id=session_id)
 
     except Exception as e:

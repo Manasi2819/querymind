@@ -19,11 +19,14 @@ FORBIDDEN_INTENT_KEYWORDS = [
     "delete", "drop", "truncate", "update", "insert", "alter", "create", "modify", "remove", "change", "set", "clear"
 ]
 
-def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str = None, api_key: str = None, model: str = None, base_url: str = None, history: str = "") -> str:
+def classify_intent(question: str, has_db: bool, has_docs: bool, provider: str = None, api_key: str = None, model: str = None, base_url: str = None, history: str = "", is_related: bool = True) -> str:
     """
     Returns: 'sql_with_context' | 'rag' | 'chat' | 'unauthorized'
     Uses LLM for smart routing if provider is given, falling back to keywords.
     """
+    if not is_related:
+        history = ""
+        
     if provider:
         try:
             from services.llm_service import get_llm

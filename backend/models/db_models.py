@@ -49,6 +49,7 @@ class ChatSession(Base):
     id         = Column(String(128), primary_key=True, index=True)  # UUID or frontend-generated
     user_id    = Column(Integer, ForeignKey("admin_users.id"), index=True)
     title      = Column(String(512), default="New chat")
+    summary    = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

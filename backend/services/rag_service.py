@@ -14,9 +14,12 @@ def answer_from_docs(
     api_key: str = None,
     history: str = "",
     model: str = None,
-    base_url: str = None
+    base_url: str = None,
+    is_related: bool = True
 ) -> str:
     """Retrieves context from vector store and answers with LLM, considering chat history."""
+    if not is_related:
+        history = ""
     try:
         # We search across all relevant collections to ensure nothing is missed
         collections = [

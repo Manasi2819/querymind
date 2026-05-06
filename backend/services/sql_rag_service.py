@@ -269,7 +269,7 @@ def execute_query(sql: str, connection_url: str) -> tuple:
         raise Exception(f"SQL execution failed: {str(e)}")
 
 
-def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None, history: str = ""):
+def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, db_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None, history: str = "", is_related: bool = True):
     """
     Enhanced pipeline:
     1. Retrieve relevant DB schema
@@ -280,7 +280,12 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
     pipeline_logger.info("Pipeline Started", extra={"stage": "USER_INPUT", "payload": {"question": question, "tenant_id": tenant_id}})
 
     # 0. Context check & rewrite
-    rewritten_question = rewrite_query(question, history, llm_provider, api_key, model, base_url)
+    if is_related and history:
+        rewritten_question = rewrite_query(question, history, llm_provider, api_key, model, base_url)
+    else:
+        # For fresh queries, we use the original question directly
+        rewritten_question = question
+        pipeline_logger.info("Query Rewrite Skipped", extra={"stage": "QUERY_REWRITE", "payload": {"reason": "fresh_query" if not is_related else "no_history"}})
     
     # 1 & 2. Retrieve context
     schema = retrieve_relevant_schema(rewritten_question, tenant_id, k=6, base_url=base_url)
