@@ -65,6 +65,7 @@ Thumbs.db
 
 # Custom Logs & Outputs
 *.log
+backend/logs/
 backend/pytest_errors.txt
 backend/pytest_errors_utf8.txt
 

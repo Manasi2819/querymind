@@ -9,6 +9,8 @@ import chromadb
 from config import get_settings
 from services.llm_service import get_llm, get_embed_model
 import re
+import time
+from core.logger import pipeline_logger
 
 # SQL Guardrails: Keywords that are forbidden to prevent data modification or schema changes.
 FORBIDDEN_SQL_KEYWORDS = [
@@ -46,10 +48,14 @@ def retrieve_relevant_schema(query: str, tenant_id: str, k: int = 5, base_url: s
             # For larger databases, fall back to RAG (Top K)
             res_sql = col_sql.query(query_embeddings=[query_embedding], n_results=k)
             if res_sql and res_sql['documents'][0]:
-                return "\n\n".join(res_sql['documents'][0])
-    except Exception:
+                docs = res_sql['documents'][0]
+                pipeline_logger.info("RAG Schema Retrieval", extra={"stage": "RAG_RETRIEVAL", "payload": {"query": query, "num_docs": len(docs), "collection": f"{tenant_id}_sql_metadata"}})
+                return "\n\n".join(docs)
+    except Exception as e:
+        pipeline_logger.warning("RAG Schema Retrieval Failed", extra={"stage": "RAG_RETRIEVAL", "payload": {"error": str(e)}})
         pass
 
+    pipeline_logger.info("RAG Schema Retrieval", extra={"stage": "RAG_RETRIEVAL", "payload": {"query": query, "num_docs": 0}})
     return "No relevant database schema found."
 
 def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5, base_url: str = None) -> str:
@@ -78,6 +84,8 @@ def retrieve_knowledge_base(query: str, tenant_id: str, k: int = 5, base_url: st
                 contexts.extend(res['documents'][0])
         except Exception:
             pass
+            
+    pipeline_logger.info("RAG Knowledge Retrieval", extra={"stage": "RAG_RETRIEVAL", "payload": {"query": query, "num_docs": len(contexts)}})
             
     if not contexts:
         return "No relevant external knowledge found."
@@ -108,6 +116,20 @@ def rewrite_query(question: str, history: str = "", llm_provider: str = None, ap
     
     response = llm.invoke(prompt)
     rewritten = response.content.strip()
+    
+    classification = "fresh_query" if not history else ("follow-up" if rewritten != question else "contextual_query")
+    pipeline_logger.info(
+        "Query Rewrite Output", 
+        extra={
+            "stage": "QUERY_REWRITE", 
+            "payload": {
+                "original": question, 
+                "rewritten": rewritten, 
+                "classification": classification,
+                "used_context": bool(history)
+            }
+        }
+    )
     return rewritten
 
 
@@ -212,13 +234,17 @@ def validate_sql(sql: str):
     for keyword in FORBIDDEN_SQL_KEYWORDS:
         pattern = rf"\b{keyword}\b"
         if re.search(pattern, sql_upper):
+            pipeline_logger.warning("SQL Validation Failed", extra={"stage": "SQL_VALIDATION", "payload": {"status": "failed", "reason": f"Forbidden keyword: {keyword}"}})
             raise Exception(f"Security Alert: Forbidden SQL keyword '{keyword}' detected. Only SELECT queries are allowed.")
             
     # 2. Check for forbidden tables (internal data leakage)
     for table in FORBIDDEN_TABLES:
         pattern = rf"\b{table}\b"
         if re.search(pattern, sql_upper.lower()): # Check against lowercase table names in regex
+            pipeline_logger.warning("SQL Validation Failed", extra={"stage": "SQL_VALIDATION", "payload": {"status": "failed", "reason": f"Forbidden table: {table}"}})
             raise Exception(f"Security Alert: Access to restricted internal table '{table}' is forbidden.")
+            
+    pipeline_logger.info("SQL Validation Passed", extra={"stage": "SQL_VALIDATION", "payload": {"status": "passed"}})
 
 def execute_query(sql: str, connection_url: str) -> tuple:
     """
@@ -230,12 +256,16 @@ def execute_query(sql: str, connection_url: str) -> tuple:
     from services.database_connection import connect_db
     engine = connect_db(connection_url)
     try:
+        start_time = time.time()
         with engine.connect() as conn:
             df = pd.read_sql(text(sql), conn)
             # Standardize for JSON response (Converts Timestamps to strings and handles JSON-safety)
             data = json.loads(df.to_json(orient="records", date_format="iso"))
+            exec_time = round(time.time() - start_time, 3)
+            pipeline_logger.info("SQL Execution Success", extra={"stage": "SQL_EXECUTION", "payload": {"execution_time_sec": exec_time, "returned_rows": len(df)}})
             return sql, data, df
     except Exception as e:
+        pipeline_logger.error("SQL Execution Failed", extra={"stage": "SQL_EXECUTION", "payload": {"error": str(e)}})
         raise Exception(f"SQL execution failed: {str(e)}")
 
 
@@ -247,12 +277,18 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
     3. Generate Context-Aware SQL
     4. Execute with retry loop
     """
+    pipeline_logger.info("Pipeline Started", extra={"stage": "USER_INPUT", "payload": {"question": question, "tenant_id": tenant_id}})
+
     # 0. Context check & rewrite
     rewritten_question = rewrite_query(question, history, llm_provider, api_key, model, base_url)
     
     # 1 & 2. Retrieve context
     schema = retrieve_relevant_schema(rewritten_question, tenant_id, k=6, base_url=base_url)
     knowledge = retrieve_knowledge_base(rewritten_question, tenant_id, k=5, base_url=base_url)
+    
+    # 5. Schema Validation Log (Lightweight context dump before LLM)
+    schema_snippet = schema[:500] + "..." if len(schema) > 500 else schema
+    pipeline_logger.info("Schema Context Selected", extra={"stage": "SCHEMA_LOGGING", "payload": {"schema_snippet": schema_snippet}})
     
     # 3. Generate SQL
     sql = generate_sql_with_context(
@@ -265,6 +301,8 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
         model=model,
         base_url=base_url
     )
+    
+    pipeline_logger.info("SQL Generated", extra={"stage": "SQL_GENERATION", "payload": {"generated_sql": sql}})
     
     if sql.startswith("ERROR"):
         if "Forbidden action" in sql:
@@ -315,6 +353,7 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
             """
             summary = llm.invoke(summary_prompt).content
             
+            pipeline_logger.info("Pipeline Completed", extra={"stage": "FINAL_RESPONSE", "payload": {"status": "success", "final_sql": final_sql, "summary": summary.strip()}})
             return summary.strip(), final_sql, data
 
         except Exception as e:
@@ -326,6 +365,7 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
                 # To simplify, we'll use a modified correction prompt if needed, 
                 # but for now let's reuse generate_corrected_sql with combined context
                 combined_context = f"SCHEMA:\n{schema}\n\nKNOWLEDGE:\n{knowledge}"
+                pipeline_logger.info("Triggering Retry", extra={"stage": "RETRY_LOGIC", "payload": {"attempt": attempts, "reason": last_error, "failed_sql": sql}})
                 sql = generate_corrected_sql(
                     question=rewritten_question,
                     schema_context=combined_context,
@@ -337,9 +377,11 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
                     model=model,
                     base_url=base_url
                 )
+                pipeline_logger.info("Corrected SQL Generated", extra={"stage": "RETRY_LOGIC", "payload": {"attempt": attempts, "corrected_sql": sql}})
                 if sql.startswith("ERROR"):
                     break
             else:
                 break
 
+    pipeline_logger.error("Pipeline Failed", extra={"stage": "FINAL_RESPONSE", "payload": {"status": "failed", "error": last_error}})
     return f"Error executing query after {max_retries} retries: {last_error}", sql, None

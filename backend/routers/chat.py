@@ -10,6 +10,7 @@ from models import db_models as models
 from routers.admin import get_db_url, get_llm_cfg, get_db_type
 from services.sql_rag_service import FORBIDDEN_SQL_KEYWORDS
 from services.redaction_service import redact_secrets
+from core.logger import request_session_id
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -18,6 +19,9 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     question = request.message
     session_id = request.session_id
     user_id = request.user_id or 1
+    
+    # Set the contextvar for the logger
+    request_session_id.set(session_id)
 
     # Pre-emptive SQL injection/modification check
     q_upper = question.upper()

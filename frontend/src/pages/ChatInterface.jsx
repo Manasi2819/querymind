@@ -46,8 +46,8 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
     setLoading(true)
 
     try {
-      // ── Same-day frontend cache check ─────────────────────────
-      const cached = checkQueryCache(userId, text)
+      // ── Session-isolated frontend cache check ─────────────────
+      const cached = checkQueryCache(userId, sessionId, text)
       if (cached) {
         const cachedMsg = {
           role: 'assistant',
@@ -86,11 +86,11 @@ export default function ChatInterface({ session, onAddMessage, onFirstMessage })
       }
       onAddMessage(sessionId, assistantMsg)
 
-      // ── Store in same-day frontend cache ──────────────────────
+      // ── Store in session-isolated frontend cache ──────────────
       // Do not cache errors so the user can easily retry
       const isError = data.answer && (data.answer.startsWith('Error') || data.answer.startsWith('⚠️ Error'));
       if (!data.cached && !isError) {
-        storeQueryCache(userId, text, {
+        storeQueryCache(userId, sessionId, text, {
           answer: data.answer,
           sql: data.sql || null,
           data: data.data || null,
