@@ -161,6 +161,29 @@ def _extract_sql(text: str) -> str:
     return sql
 
 
+def _extract_bad_identifier(error_message: str) -> str | None:
+    """
+    Parses a psycopg2 / SQLAlchemy error message and returns the specific
+    column or table name that does not exist so it can be banned in the
+    retry prompt.
+
+    Examples handled:
+      - "column e.employee_name does not exist"  ->  "employee_name"
+      - 'relation "employee_profile" does not exist'  ->  "employee_profile"
+    """
+    # Column pattern: 'column <alias.>name does not exist'
+    col_match = re.search(r'column [\w.]*?(\w+) does not exist', error_message, re.IGNORECASE)
+    if col_match:
+        return col_match.group(1)
+
+    # Table / relation pattern: 'relation "name" does not exist'
+    rel_match = re.search(r'relation "([^"]+)" does not exist', error_message, re.IGNORECASE)
+    if rel_match:
+        return rel_match.group(1)
+
+    return None
+
+
 def generate_sql_with_context(question: str, schema: str, knowledge: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None) -> str:
     """
     Constructs the specialized 'context-aware' prompt for SQL generation.
@@ -191,17 +214,54 @@ INSTRUCTIONS:
     response = llm.invoke(prompt)
     return _extract_sql(response.content)
 
-def generate_corrected_sql(question: str, schema_context: str, failed_sql: str, error_message: str, engine_type: str = "mysql", llm_provider: str = None, api_key: str = None, model: str = None, base_url: str = None) -> str:
+def generate_corrected_sql(
+    question: str,
+    schema_context: str,
+    failed_sql: str,
+    error_message: str,
+    available_tables: list = None,
+    engine_type: str = "mysql",
+    llm_provider: str = None,
+    api_key: str = None,
+    model: str = None,
+    base_url: str = None
+) -> str:
     """
     Prompts the LLM to fix a broken SQL query based on the error message.
+    Injects:
+      - A definitive list of ALL available tables (so the LLM cannot invent ones)
+      - A BANNED identifier section (so the LLM cannot reuse the failing name)
+      - A strict CRITICAL instruction forbidding name-guessing
     """
     llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
-    
+
+    # --- Build the AVAILABLE TABLES block ---
+    if available_tables:
+        tables_line = ", ".join(available_tables)
+        available_tables_block = f"### AVAILABLE TABLES (ONLY these tables exist — do NOT use any other):\n{tables_line}"
+    else:
+        available_tables_block = ""
+
+    # --- Build the BANNED identifier block ---
+    bad_id = _extract_bad_identifier(error_message)
+    if bad_id:
+        banned_block = (
+            f"### BANNED IDENTIFIER:\n"
+            f"Do NOT use `{bad_id}` — it does not exist in the database. "
+            f"Using it again will cause the same error."
+        )
+    else:
+        banned_block = ""
+
     prompt = f"""You are a specialized SQL assistant.
 The previous SQL query you generated failed with an error. Please fix it.
 
+{available_tables_block}
+
 ### DATABASE SCHEMA CONTEXT:
 {schema_context}
+
+{banned_block}
 
 ### USER QUESTION:
 {question}
@@ -213,14 +273,16 @@ The previous SQL query you generated failed with an error. Please fix it.
 {error_message}
 
 ### INSTRUCTIONS:
-- Return ONLY the corrected raw SQL code. 
+- Return ONLY the corrected raw SQL code.
 - CRITICAL: Do NOT add notes, explanations, or preambles. No "Note:", no "Here is the query". Just the code.
+- CRITICAL: You must ONLY use the columns and tables listed under AVAILABLE TABLES and SCHEMA CONTEXT.
+  If a column is missing, do NOT guess its name; instead, look for the closest real match in the
+  provided schema (e.g., use `first_name` + `last_name` instead of `name`).
 - Ensure the query is read-only (SELECT only).
 - If the user is asking to modify, delete, insert, or change data/schema, return "ERROR: Forbidden action".
-- Fix the error mentioned in the error message.
 
 ### CORRECTED SQL QUERY:"""
-    
+
     response = llm.invoke(prompt)
     return _extract_sql(response.content)
 
@@ -314,68 +376,55 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
              return "I cannot do that action, I can only fetch data and show it.", None, None
         return "I don't have enough information to generate a correct SQL query.", None, None
         
-    # 4. Execute with Retry Loop (Reuse the execution logic)
+    # 4. Execute with Retry Loop — ONLY retries on SQL execution errors.
+    #    Summary generation happens OUTSIDE this loop to avoid misclassifying
+    #    a token-limit (413) error on the summary as a SQL failure.
     max_retries = 3
     attempts = 0
     last_error = ""
+    final_sql = None
+    data = None
+    df = None
 
     while attempts < max_retries:
         try:
             final_sql, data, df = execute_query(sql, db_url)
-            
-            # Dynamic data sampling for summarization
-            total_rows = len(df)
-            total_cols = len(df.columns)
-            
-            if total_rows <= 200:
-                sample_data = data
-                sample_info = f"Showing all {total_rows} rows."
-            else:
-                # For very large datasets, we send a 100-row sample to avoid context limits
-                sample_data = data[:100]
-                sample_info = f"Showing a sample of the first 100 out of {total_rows} total rows."
-
-            # Final Answer formatting
-            llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
-            summary_prompt = f"""
-            The user asked: {rewritten_question}
-            SQL used: {final_sql}
-            
-            RESULT METADATA:
-            - Total Rows: {total_rows}
-            - Total Columns: {total_cols}
-            - Data Content: {sample_info}
-            
-            DATA (JSON):
-            {sample_data}
-            
-            INSTRUCTIONS:
-            Provide a very brief (1-2 sentences) natural language summary of these results. 
-            - IMPORTANT: You MUST reference the total number of records ({total_rows}) in your summary.
-            - If there are many rows, summarize the overall findings instead of listing individuals.
-            - SECURITY: NEVER mention API keys, passwords, or database secrets in this summary.
-            - Keep the tone helpful and concise.
-            """
-            summary = llm.invoke(summary_prompt).content
-            
-            pipeline_logger.info("Pipeline Completed", extra={"stage": "FINAL_RESPONSE", "payload": {"status": "success", "final_sql": final_sql, "summary": summary.strip()}})
-            return summary.strip(), final_sql, data
+            # SQL succeeded — break out of retry loop
+            break
 
         except Exception as e:
             last_error = str(e)
             attempts += 1
-            
+
             if attempts < max_retries:
-                # Use generate_corrected_sql but with enhanced context
-                # To simplify, we'll use a modified correction prompt if needed, 
-                # but for now let's reuse generate_corrected_sql with combined context
                 combined_context = f"SCHEMA:\n{schema}\n\nKNOWLEDGE:\n{knowledge}"
-                pipeline_logger.info("Triggering Retry", extra={"stage": "RETRY_LOGIC", "payload": {"attempt": attempts, "reason": last_error, "failed_sql": sql}})
+
+                # Fetch all real table names from the DB so the LLM cannot invent tables
+                all_db_tables = []
+                try:
+                    from sqlalchemy import inspect as sa_inspect
+                    from services.database_connection import connect_db
+                    _engine = connect_db(db_url)
+                    all_db_tables = sa_inspect(_engine).get_table_names()
+                except Exception:
+                    pass  # Non-fatal: prompt will still contain schema context
+
+                pipeline_logger.info(
+                    "Triggering Retry",
+                    extra={"stage": "RETRY_LOGIC", "payload": {
+                        "attempt": attempts,
+                        "reason": last_error,
+                        "failed_sql": sql,
+                        "available_tables": all_db_tables
+                    }}
+                )
+
                 sql = generate_corrected_sql(
                     question=rewritten_question,
                     schema_context=combined_context,
                     failed_sql=sql,
                     error_message=last_error,
+                    available_tables=all_db_tables,
                     engine_type=db_type,
                     llm_provider=llm_provider,
                     api_key=api_key,
@@ -388,5 +437,51 @@ def run_context_aware_sql_pipeline(question: str, tenant_id: str, db_url: str, d
             else:
                 break
 
-    pipeline_logger.error("Pipeline Failed", extra={"stage": "FINAL_RESPONSE", "payload": {"status": "failed", "error": last_error}})
-    return f"Error executing query after {max_retries} retries: {last_error}", sql, None
+    # If all retries exhausted without a successful execution, fail here.
+    if df is None:
+        pipeline_logger.error("Pipeline Failed", extra={"stage": "FINAL_RESPONSE", "payload": {"status": "failed", "error": last_error}})
+        return f"Error executing query after {max_retries} retries: {last_error}", sql, None
+
+    # 5. Summarise — runs AFTER the retry loop so a 413/timeout here never
+    #    causes needless SQL regeneration.
+    total_rows = len(df)
+    total_cols = len(df.columns)
+
+    # Send at most 5 rows to the summary LLM to stay well within token limits.
+    # The full dataset is still returned to the frontend via `data`.
+    SUMMARY_SAMPLE_SIZE = 5
+    if total_rows <= SUMMARY_SAMPLE_SIZE:
+        sample_data = data
+        sample_info = f"Showing all {total_rows} rows."
+    else:
+        sample_data = data[:SUMMARY_SAMPLE_SIZE]
+        sample_info = f"Showing {SUMMARY_SAMPLE_SIZE} representative rows out of {total_rows} total rows."
+
+    try:
+        llm = get_llm(provider=llm_provider, api_key=api_key, model=model, base_url=base_url)
+        summary_prompt = f"""The user asked: {rewritten_question}
+SQL used: {final_sql}
+
+RESULT METADATA:
+- Total Rows: {total_rows}
+- Total Columns: {total_cols}
+- {sample_info}
+
+SAMPLE DATA (JSON):
+{sample_data}
+
+INSTRUCTIONS:
+Provide a very brief (1-2 sentences) natural language summary of these results.
+- IMPORTANT: You MUST reference the total number of records ({total_rows}) in your summary.
+- If there are many rows, summarize the overall findings instead of listing individuals.
+- SECURITY: NEVER mention API keys, passwords, or database secrets.
+- Keep the tone helpful and concise."""
+
+        summary = llm.invoke(summary_prompt).content.strip()
+    except Exception as summary_err:
+        # Graceful fallback — the query data is still returned even if summarisation fails.
+        summary = f"Query returned {total_rows} row(s) across {total_cols} column(s)."
+        pipeline_logger.warning("Summary Generation Failed", extra={"stage": "SUMMARISATION", "payload": {"error": str(summary_err), "fallback_used": True}})
+
+    pipeline_logger.info("Pipeline Completed", extra={"stage": "FINAL_RESPONSE", "payload": {"status": "success", "final_sql": final_sql, "summary": summary}})
+    return summary, final_sql, data
