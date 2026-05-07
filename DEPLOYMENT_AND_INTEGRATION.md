@@ -42,13 +42,14 @@ The recommended deployment method is using **Docker Compose** on a Linux VM (e.g
 The `Dockerfile` uses a 3-stage build to minimize size and optimize performance.
 ```bash
 # Start the container in detached mode
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### 2. Access Points
 In production, both the UI and the API are served on a **single port**:
 - **Web UI**: `http://<vm-ip>:8000`
 - **API Docs**: `http://<vm-ip>:8000/docs`
+- **Health Check**: `http://<vm-ip>:8000/api/health`
 
 ### 3. Persistence
 QueryMind uses **Named Volumes** to ensure data persists across container restarts:
@@ -95,11 +96,11 @@ docker logs -f querymind
 
 ### Restarting Services
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
 ### Cleaning Up
 ```bash
-docker-compose down
+docker compose down
 ```
 *(Note: Named volumes are preserved unless the `-v` flag is used)*
