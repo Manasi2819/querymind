@@ -18,13 +18,20 @@ RETIRED_MODELS_MAP = {
     "mixtral-8x7b-32768": "llama-3.3-70b-versatile",
     "llama-3.1-70b-versatile": "llama-3.3-70b-versatile",
     "llama3-70b-8192": "llama-3.3-70b-versatile",
-    
-    # OpenAI
-    "gpt-3.5-turbo": "gpt-4o-mini",
-    "gpt-3.5-turbo-0125": "gpt-4o-mini",
+    "llama3-8b-8192": "llama-3.1-8b-instant",
+    "gemma2-9b-it": "llama-3.1-8b-instant",
+    "gpt-4-turbo": "gpt-5.5-pro",
+    "o1-preview": "gpt-5.5-thinking",
+    "o1-mini": "gpt-5.5-instant",
+    "gpt-4o-mini": "gpt-5.5-instant",
     
     # Anthropic
     "claude-3-haiku-20240307": "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229": "claude-4-7-opus",
+
+    # Gemini
+    "gemini-1.5-pro": "gemini-3.1-pro",
+    "gemini-1.5-flash": "gemini-3.1-flash",
 }
 
 def detect_provider(base_url: str):

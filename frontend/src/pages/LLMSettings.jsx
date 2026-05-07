@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { getLLMConfig, setLLMConfig } from '../api/client'
 
 const MODEL_MAP = {
-  openai: ['gpt-4o', 'gpt-4o-mini', 'o1-preview', 'o1-mini', 'gpt-4-turbo'],
-  anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
-  gemini: ['gemini-1.5-flash', 'gemini-1.5-pro'],
-  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192', 'llama3-8b-8192', 'gemma2-9b-it']
+  openai: ['gpt-5.5-pro', 'gpt-5.5-thinking', 'gpt-5.5-instant', 'gpt-4o'],
+  anthropic: ['claude-4-7-opus', 'claude-4-6-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku'],
+  gemini: ['gemini-3.1-pro', 'gemini-3.1-flash', 'gemini-3.1-flash-lite', 'gemini-3.0-pro'],
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama-3.2-11b-vision-preview', 'llama-3.2-3b-preview']
 }
 
 export default function LLMSettings() {
@@ -32,18 +32,6 @@ export default function LLMSettings() {
     try {
       const data = await getLLMConfig()
       setCurrentConfig(data)
-      if (data.provider === 'endpoint' || data.provider === 'ollama') {
-        if (data.base_url) setEndpointUrl(data.base_url)
-        if (data.model) setEndpointModel(data.model)
-      } else if (data.provider) {
-        setProvider(data.provider)
-        const validModels = MODEL_MAP[data.provider] || []
-        if (data.model && validModels.includes(data.model)) {
-          setModel(data.model)
-        } else if (validModels.length > 0) {
-          setModel(validModels[0])
-        }
-      }
     } catch {
       setCurrentConfig(null)
     }
@@ -133,38 +121,41 @@ export default function LLMSettings() {
           <form onSubmit={handleEndpointSave}>
             <div className="form-group">
               <label className="form-label" htmlFor="endpoint-url">Base URL</label>
-              <input
+                <input
                 id="endpoint-url"
                 type="text"
                 className="form-input"
                 value={endpointUrl}
                 onChange={(e) => setEndpointUrl(e.target.value)}
                 placeholder="http://192.168.1.100:11434"
+                autoComplete="off"
               />
             </div>
 
             <div className="form-group">
               <label className="form-label" htmlFor="endpoint-model">Model Name</label>
-              <input
+                <input
                 id="endpoint-model"
                 type="text"
                 className="form-input"
                 value={endpointModel}
                 onChange={(e) => setEndpointModel(e.target.value)}
                 placeholder="llama3.2"
+                autoComplete="off"
               />
             </div>
             
             <div className="form-group">
               <label className="form-label" htmlFor="endpoint-api-key">API Key (Optional)</label>
               <div className="input-wrapper">
-                <input
+                  <input
                   id="endpoint-api-key"
                   type={showEndpointKey ? 'text' : 'password'}
                   className="form-input"
                   value={endpointKey}
                   onChange={(e) => setEndpointKey(e.target.value)}
                   placeholder="Bearer token if required..."
+                  autoComplete="new-password"
                 />
                 <button type="button" className="input-toggle" onClick={() => setShowEndpointKey(!showEndpointKey)}>
                   {showEndpointKey ? '🙈' : '👁️'}
@@ -212,6 +203,7 @@ export default function LLMSettings() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="sk-..."
+                  autoComplete="new-password"
                 />
                 <button type="button" className="input-toggle" onClick={() => setShowKey(!showKey)}>
                   {showKey ? '🙈' : '👁️'}

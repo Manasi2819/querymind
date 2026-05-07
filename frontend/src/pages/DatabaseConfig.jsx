@@ -6,8 +6,8 @@ const DEFAULT_PORTS = { mysql: 3306, postgresql: 5432, sqlite: 0 }
 export default function DatabaseConfig() {
   const [dbType, setDbType] = useState('mysql')
   const [method, setMethod] = useState('fields') // 'fields' | 'url'
-  const [host, setHost] = useState('localhost')
-  const [port, setPort] = useState(3306)
+  const [host, setHost] = useState('')
+  const [port, setPort] = useState('')
   const [database, setDatabase] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -30,7 +30,6 @@ export default function DatabaseConfig() {
 
   const handleDbTypeChange = (t) => {
     setDbType(t)
-    setPort(DEFAULT_PORTS[t] || 3306)
   }
 
   const handleSubmit = async (e) => {
@@ -125,7 +124,7 @@ export default function DatabaseConfig() {
           {method === 'url' ? (
             <div className="form-group">
               <label className="form-label" htmlFor="conn-url">Connection URL</label>
-              <input
+                <input
                 id="conn-url"
                 type="text"
                 className="form-input"
@@ -133,6 +132,7 @@ export default function DatabaseConfig() {
                 onChange={(e) => setConnUrl(e.target.value)}
                 placeholder={urlPlaceholder}
                 required
+                autoComplete="off"
               />
               <p className="form-caption">💡 Supported: mysql+pymysql://, postgresql://, sqlite:///</p>
             </div>
@@ -148,21 +148,9 @@ export default function DatabaseConfig() {
                     value={host}
                     onChange={(e) => setHost(e.target.value)}
                     placeholder="localhost"
+                    autoComplete="off"
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="db-port">Port</label>
-                  <input
-                    id="db-port"
-                    type="number"
-                    className="form-input"
-                    value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              <div className="form-grid-2">
                 <div className="form-group">
                   <label className="form-label" htmlFor="db-name">Database Name</label>
                   <input
@@ -173,6 +161,22 @@ export default function DatabaseConfig() {
                     onChange={(e) => setDatabase(e.target.value)}
                     placeholder="my_database"
                     required
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="db-username">Username</label>
+                  <input
+                    id="db-username"
+                    type="text"
+                    className="form-input"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="root"
+                    autoComplete="off"
                   />
                 </div>
                 <div className="form-group">
@@ -185,6 +189,7 @@ export default function DatabaseConfig() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
+                      autoComplete="new-password"
                     />
                     <button type="button" className="input-toggle" onClick={() => setShowPass(!showPass)}>
                       {showPass ? '🙈' : '👁️'}
@@ -194,14 +199,14 @@ export default function DatabaseConfig() {
               </div>
 
               <div className="form-group">
-                <label className="form-label" htmlFor="db-username">Username</label>
+                <label className="form-label" htmlFor="db-port">Port</label>
                 <input
-                  id="db-username"
-                  type="text"
+                  id="db-port"
+                  type="number"
                   className="form-input"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="root"
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                  autoComplete="off"
                 />
               </div>
             </>

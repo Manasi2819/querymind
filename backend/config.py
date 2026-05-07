@@ -9,13 +9,13 @@ class Settings(BaseSettings):
     endpoint_model: str = ""
     endpoint_api_key: str = ""
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5.5-instant"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-5-haiku-20241022"
+    anthropic_model: str = "claude-4-6-sonnet"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-3.1-flash"
     groq_api_key: str = ""
-    groq_model: str = "llama3-8b-8192"
+    groq_model: str = "llama-3.1-8b-instant"
 
     # ── Database (single URL — database-agnostic) ─────────────────────────
     # Supports SQLite | MySQL | PostgreSQL via DATABASE_URL.
