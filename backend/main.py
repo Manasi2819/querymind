@@ -17,7 +17,7 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     print("🚀 App lifespan: Syncing admin user...")
     
-    # Wait for entrypoint.sh to finish migrations. 
+    # Wait for start.sh to finish migrations. 
     # We NO LONGER call Base.metadata.create_all(bind=engine) here 
     # because it conflicts with Alembic's initial migration on MySQL.
 

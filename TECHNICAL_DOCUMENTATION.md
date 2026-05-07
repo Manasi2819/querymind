@@ -22,14 +22,21 @@ QueryMind is built as a modular application designed for high security and resou
 
 The core of QueryMind is its ability to route queries to the appropriate knowledge source.
 
-### 2.1. Intent Classification
-Every query is first processed by the `IntentClassifier`:
+### 2.1. Context Decision Agent
+Before routing, the query is analyzed by the `ContextDecisionAgent` to determine if it's a follow-up or a fresh query. It uses a weighted triple-layer scoring system:
+- **Layer 1: Linguistic Signals (50%)**: Detects pronouns (it, they, his) and continuation phrases (what about, and then).
+- **Layer 2: Topic State (35%)**: Tracks schema overlap (tables/columns) from the previous successful SQL query.
+- **Layer 3: Session Summary (15%)**: Matches keywords against a rolling 15-word session summary.
+- **Decision**: A score ≥ 50 classifies the query as "Related", triggering context-aware rewriting.
+
+### 2.2. Intent Classification
+Once the relationship is established, the query is processed by the `IntentClassifier`:
 - **SQL Route**: If the query relates to structured data (e.g., "how many users...").
 - **Document RAG Route**: If the query relates to knowledge in uploaded files (e.g., "what is our policy on...").
 - **General Chat**: For basic greetings or general questions.
 
-### 2.2. Document RAG Workflow
-1. **Retrieval**: ChromaDB is queried for top-K relevant text chunks using `nomic-embed-text` embeddings.
+### 2.3. Document RAG Workflow
+1. **Retrieval**: ChromaDB is queried for top-K relevant text chunks using `all-MiniLM-L6-v2` embeddings (optimized for CPU).
 2. **Context Assembly**: Chunks are combined with conversation history.
 3. **Generation**: An LLM prompt is constructed with the context and query.
 4. **Validation**: The response is scanned for sensitive data (DLP) before delivery.

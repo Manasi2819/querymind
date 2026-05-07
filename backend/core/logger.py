@@ -74,24 +74,23 @@ def setup_pipeline_logger():
     debug_mode = os.getenv("DEBUG_PIPELINE", "false").lower() == "true"
     logger.setLevel(logging.DEBUG if debug_mode else logging.INFO)
     
-    # Ensure logs directory exists
-    log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    
-    log_file_path = os.path.join(log_dir, "sql_pipeline.log")
-    
-    # File Handler: Rotates daily
-    file_handler = TimedRotatingFileHandler(
-        filename=log_file_path,
-        when="midnight",
-        interval=1,
-        backupCount=30
-    )
-    # The suffix isn't strictly needed if we want the current log to be `sql_pipeline.log`
-    # and rotated logs to have the date suffix. `TimedRotatingFileHandler` appends %Y-%m-%d by default.
-    file_handler.suffix = "%Y_%m_%d.log"
-    file_handler.setFormatter(JSONFormatter())
-    logger.addHandler(file_handler)
+    # File Handler: Rotates daily — ONLY added if ENABLE_FILE_LOGGING is true
+    if os.getenv("ENABLE_FILE_LOGGING", "false").lower() == "true":
+        # Ensure logs directory exists
+        log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        
+        log_file_path = os.path.join(log_dir, "sql_pipeline.log")
+        
+        file_handler = TimedRotatingFileHandler(
+            filename=log_file_path,
+            when="midnight",
+            interval=1,
+            backupCount=30
+        )
+        file_handler.suffix = "%Y_%m_%d.log"
+        file_handler.setFormatter(JSONFormatter())
+        logger.addHandler(file_handler)
     
     # Console Handler: Outputs to terminal
     console_handler = logging.StreamHandler()

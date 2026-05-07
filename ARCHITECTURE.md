@@ -23,6 +23,7 @@ graph TD
             Router_Admin[/admin/*]
             
             Intent[Intent Classifier]
+            Context[Context Decision Agent]
             
             subgraph Pipelines ["Pipelines"]
                 SQL_RAG[SQL RAG Service]
@@ -94,6 +95,7 @@ Detailed step-by-step from user query → intent classification → retrieval �
 sequenceDiagram
     participant U as User
     participant A as FastAPI Backend
+    participant C as Context Decision Agent
     participant I as Intent Classifier
     participant R as RAG/SQL Pipeline
     participant V as Vector/DB Store
@@ -101,8 +103,10 @@ sequenceDiagram
     participant S as DLP Redactor
 
     U->>A: POST /chat (Question)
-    A->>I: Identify Intent
-    I-->>A: Intent: SQL | RAG | Chat
+    A->>C: Decide Relatedness (L1+L2+L3)
+    C-->>A: Decision: Fresh | Related
+    A->>I: Identify Intent (SQL | RAG | Chat)
+    I-->>A: Selected Pipeline
     
     A->>V: Retrieve Context / Schema
     V-->>A: Context Data
